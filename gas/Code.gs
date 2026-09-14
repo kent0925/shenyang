@@ -1,21 +1,152 @@
 /**
- * Code.gs - 系統主入口與初始化排程
+ * Code.gs - 系統主入口、API Router 與初始化排程
  * 
  * 任務：
- * 公司表單系統 Phase 2A-1 後端資料骨架與初始化
+ * 公司表單系統 Phase 2A-2 安全 API 層與資料服務層
  * 
  * 核心功能：
- * 1. initializeSystem(): 執行一次性或重複執行之系統初始化（保證冪等）
- *    - 建立或取得「公司表單系統主檔資料庫」
- *    - 建立工作表：專案主檔、廠商主檔、年度設定
- *    - 建立當前年度資料庫（如「2026公司表單資料庫」）
- *    - 建立工作表：預算項目、表單紀錄、請款紀錄、付款紀錄、異動紀錄
- *    - 將主檔與年度資訊登記至 Script Properties 與「年度設定」
- * 2. createYearDatabase(year): 支援未來（如 2027）動態增加年度資料庫，禁止複製程式碼。
+ * 1. doPost(e): 正式 API 請求入口，統一進行 API_SHARED_SECRET 驗證與 Action 分發。
+ * 2. doGet(e): 僅提供 METHOD_NOT_ALLOWED 提示，不提供任何資料查詢或修改。
+ * 3. initializeSystem(): 僅供 Apps Script 後台人工執行之系統維護與升級函式，嚴禁由 API 調用。
  */
 
 /**
- * 系統初始化入口函式
+ * 輔助建構統一 API 成功回應
+ * @param {any} data 回傳資料
+ * @return {GoogleAppsScript.Content.TextOutput}
+ */
+function createSuccessResponse(data) {
+  var output = {
+    ok: true,
+    data: data || {},
+  };
+  return ContentService.createTextOutput(JSON.stringify(output)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * 輔助建構統一 API 失敗回應（不洩漏敏感內部錯誤與 Stack Trace）
+ * @param {string} code 錯誤碼
+ * @param {string} message 中文錯誤訊息
+ * @return {GoogleAppsScript.Content.TextOutput}
+ */
+function createErrorResponse(code, message) {
+  var output = {
+    ok: false,
+    error: {
+      code: code || 'INTERNAL_ERROR',
+      message: message || '發生未預期的伺服器錯誤',
+    },
+  };
+  return ContentService.createTextOutput(JSON.stringify(output)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Web App HTTP GET 入口（不提供資料操作）
+ */
+function doGet(e) {
+  return createErrorResponse('METHOD_NOT_ALLOWED', '請使用 POST 方法存取 API');
+}
+
+/**
+ * Web App HTTP POST 入口
+ * @param {Object} e 包含 postData 之請求事件物件
+ */
+function doPost(e) {
+  var actionName = 'unknown';
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return createErrorResponse('INVALID_JSON', '缺少請求內容 (request body)');
+    }
+
+    var body;
+    try {
+      body = JSON.parse(e.postData.contents);
+    } catch (parseErr) {
+      return createErrorResponse('INVALID_JSON', '請求內容非合法 JSON 格式');
+    }
+
+    var secret = body.secret;
+    var action = body.action;
+    var payload = body.payload || {};
+    actionName = action || 'undefined';
+
+    // 1. 權限驗證：核對 API_SHARED_SECRET
+    var expectedSecret = getApiSharedSecret();
+    if (!expectedSecret || expectedSecret.trim() === '' || secret !== expectedSecret) {
+      Logger.log('[API] 授權失敗 (action: ' + actionName + ')');
+      return createErrorResponse('UNAUTHORIZED', '未授權的 API 請求');
+    }
+
+    // 2. 嚴禁透過 API 調用 initializeSystem
+    if (action === 'initializeSystem') {
+      Logger.log('[API] 拒絕存取內部初始化維護函式');
+      return createErrorResponse('UNKNOWN_ACTION', '未知的請求動作 (action)');
+    }
+
+    // 3. Action 分發
+    var resultData = null;
+    switch (action) {
+      case 'health':
+        resultData = {
+          service: 'company-form-backend',
+          status: 'ok',
+          schemaVersion: getProperty(PROPERTY_KEYS.SCHEMA_VERSION) || CONFIG_DEFAULTS.SCHEMA_VERSION,
+          currentYear: String(getCurrentYear()),
+        };
+        break;
+
+      case 'listProjects':
+        resultData = handleListProjects(payload);
+        break;
+
+      case 'saveProject':
+        resultData = handleSaveProject(payload);
+        break;
+
+      case 'listVendors':
+        resultData = handleListVendors(payload);
+        break;
+
+      case 'saveVendor':
+        resultData = handleSaveVendor(payload);
+        break;
+
+      case 'listBudgetItems':
+        resultData = handleListBudgetItems(payload);
+        break;
+
+      case 'saveBudgetItem':
+        resultData = handleSaveBudgetItem(payload);
+        break;
+
+      case 'listForms':
+        resultData = handleListForms(payload);
+        break;
+
+      case 'getForm':
+        resultData = handleGetForm(payload);
+        break;
+
+      case 'saveForm':
+        resultData = handleSaveForm(payload);
+        break;
+
+      default:
+        return createErrorResponse('UNKNOWN_ACTION', '未知的請求動作: ' + action);
+    }
+
+    Logger.log('[API] 執行成功 (action: ' + actionName + ')');
+    return createSuccessResponse(resultData);
+  } catch (err) {
+    Logger.log('[API] 執行失敗 (action: ' + actionName + '): ' + (err.message || 'unknown error'));
+    var code = err.code || 'INTERNAL_ERROR';
+    var msg = err.message || '處理請求時發生伺服器內部錯誤';
+    return createErrorResponse(code, msg);
+  }
+}
+
+/**
+ * 系統初始化入口函式（僅供後台人工執行，禁止 API 調用）
  * 具備冪等性 (Idempotent)：重複執行不會產生重複資料庫或重複工作表
  * @return {Object} 初始化結果資訊
  */

@@ -21,6 +21,7 @@ var PROPERTY_KEYS = {
   CURRENT_YEAR: 'CURRENT_YEAR',
   SCHEMA_VERSION: 'SCHEMA_VERSION',
   APP_ENV: 'APP_ENV',
+  API_SHARED_SECRET: 'API_SHARED_SECRET',
 };
 
 /**
@@ -94,4 +95,12 @@ function getCurrentYear() {
     return parseInt(yearProp, 10);
   }
   return new Date().getFullYear();
+}
+
+/**
+ * 取得 GAS API 共享密鑰
+ * @return {string|null}
+ */
+function getApiSharedSecret() {
+  return getProperty(PROPERTY_KEYS.API_SHARED_SECRET);
 }

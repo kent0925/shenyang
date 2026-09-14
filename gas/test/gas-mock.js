@@ -278,6 +278,44 @@ export function createGasEnvironment(initialProperties = {}) {
     }
   };
 
+  const ContentService = {
+    MimeType: {
+      JSON: 'application/json',
+      TEXT: 'text/plain',
+    },
+    createTextOutput(text) {
+      let mimeType = 'text/plain';
+      return {
+        setMimeType(type) {
+          mimeType = type;
+          return this;
+        },
+        getContent() {
+          return text;
+        },
+        getMimeType() {
+          return mimeType;
+        },
+      };
+    },
+  };
+
+  const LockService = {
+    getScriptLock() {
+      return {
+        waitLock(timeout) {
+          return true;
+        },
+        releaseLock() {
+          return true;
+        },
+        hasLock() {
+          return true;
+        },
+      };
+    },
+  };
+
   const Logger = {
     logs: [],
     log(...args) {
@@ -292,6 +330,8 @@ export function createGasEnvironment(initialProperties = {}) {
     PropertiesService,
     DriveApp,
     SpreadsheetApp,
+    ContentService,
+    LockService,
     Logger,
     _internal: {
       properties,

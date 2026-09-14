@@ -25,15 +25,18 @@
 
 ```text
 gas/
-├── Code.gs              # 主要入口函式：initializeSystem()、createYearDatabase(year)
-├── Config.gs            # Script Properties 存取封裝與系統預設值
+├── Code.gs              # 主要入口函式：doPost(e), doGet(e), initializeSystem()
+├── Config.gs            # Script Properties 存取封裝與 API_SHARED_SECRET
 ├── Schema.gs            # 中文 Sheet 名稱、中文 Header、內部英文 Key 映射與雙向轉換工具
+├── IdService.gs         # 安全序號產生器（LockService、Bootstrap、單調遞增）
+├── ApiService.gs        # 業務資料操作層（Projects, Vendors, BudgetItems, Forms）
 ├── DatabaseService.gs   # 主檔資料庫與 Drive 試算表冪等建立、查詢與 Locale/TimeZone 設定
 ├── YearService.gs       # 年度資料庫動態建立、查詢與「年度設定」登記
 ├── Utils.gs             # 表格結構初始化、平滑升級、文字格式化防前置0、原生 Date 物件
 ├── test/
-│   ├── gas-mock.js      # 本地 Node.js 模擬 GAS 執行環境 (含 Locale/TimeZone)
-│   └── test-phase2a1.js # 42 項自動化驗收測試腳本
+│   ├── gas-mock.js      # 本地 Node.js 模擬 GAS 執行環境 (含 Locale/TimeZone/Lock/Content)
+│   ├── test-phase2a1.js # 51 項 Phase 2A-1 自動化驗收測試腳本
+│   └── test-phase2a2.js # 50 項 Phase 2A-2 安全 API 與 Vercel 代理測試腳本
 └── README.md            # 本說明文件
 ```
 
@@ -186,14 +189,35 @@ gas/
 
 ---
 
-## 既有已建立資料庫如何安全升級
+## Phase 2A-2 安全 API 與 Vercel Proxy 規格
 
-若您在 Google Drive 中已經建立過舊版資料庫（第一列為英文 Header）：
-1. 複製最新更新的 `Schema.gs`、`Utils.gs`、`DatabaseService.gs`、`YearService.gs` 到您的 Apps Script 專案。
-2. 再次執行 **`initializeSystem`**。
-3. 系統將會：
-   - 自動檢測既有主檔資料庫與 2026 年度資料庫，**不產生任何重複檔案**。
-   - 保留現有 Spreadsheet ID 與 Sheet ID。
-   - 將第一列英文 Header 自動更新為中文 Header。
-   - 將試算表語系調整為 `zh_TW`，時區調整為 `Asia/Taipei`。
-   - 保留第 2 列以後的所有既有資料列，完全無痛升級！
+### 1. 通訊架構
+```text
+Client (測試工具 / 未來前端)
+  ↓ [Header: X-Internal-Api-Key]
+Vercel API Proxy (/api/backend.ts)
+  ↓ [自動注入 Secret: GAS_API_SHARED_SECRET]
+GAS Web App (doPost)
+  ↓
+Google Sheets (公司表單系統主檔 / 年度資料庫)
+```
+
+### 2. 本階段提供之 API Actions
+- `health`: 檢查服務健康狀態
+- `listProjects`: 取得專案清單
+- `saveProject`: 新增專案（產生 `PRJ-000001` 等）或更新專案
+- `listVendors`: 取得廠商主檔清單
+- `saveVendor`: 新增廠商（產生 `VEN-000001` 等，帳號代碼防掉前置0）或更新廠商
+- `listBudgetItems`: 依年度與專案篩選預算項目
+- `saveBudgetItem`: 新增（產生 `BUD-YYYY-000001` 等）或更新預算項目
+- `listForms`: 依年度、類型、專案、廠商與狀態篩選表單
+- `getForm`: 依表單編號取得單筆完整資料
+- `saveForm`: 新增（產生 `FRM-YYYY-000001` 等，安全儲存 `payloadJson`，不自動新增 Claim）或更新表單
+
+### 3. 環境變數設定指引（禁止 commit 至 Git）
+* **Google Apps Script 指令碼屬性 (Script Properties)**：
+  - `API_SHARED_SECRET`: GAS 與 Vercel 之間的共享密鑰
+* **Vercel 環境變數 (Vercel Environment Variables)**：
+  - `GAS_WEB_APP_URL`: Google Apps Script 發布之 Web App 網址
+  - `GAS_API_SHARED_SECRET`: 與 GAS Script Property 相符之密鑰
+  - `BACKEND_PROXY_TOKEN`: 供 Phase 2A-2 內部測試用之 Header 存取權杖 (`X-Internal-Api-Key`)
