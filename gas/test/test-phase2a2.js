@@ -439,6 +439,70 @@ async function runTests() {
     global.fetch = originalFetch;
   }
 
+  // ----------------------------------------------------
+  // 測試 9: Read API 純讀取無副作用檢驗（查詢不存在年度不建檔）
+  // ----------------------------------------------------
+  console.log('\n【測試群組 9：Read API 純讀取無副作用檢驗】');
+  const masterSs = gas.getMasterDatabase();
+  const yearConfigSheet = masterSs.getSheetByName(gas.SHEETS.YEAR_CONFIG);
+  const filesCountBeforeRead = env._internal.files.size;
+  const yearConfigRowsBeforeRead = yearConfigSheet.getDataRange().getValues().length;
+
+  // 呼叫 listBudgetItems 查詢不存在之 2099 年度
+  const listBud2099 = callDoPost(gas, {
+    secret: TEST_SHARED_SECRET,
+    action: 'listBudgetItems',
+    payload: { year: 2099 },
+  });
+  assert(listBud2099.ok === true && Array.isArray(listBud2099.data) && listBud2099.data.length === 0, '查詢不存在年度之預算項目回傳空陣列 []');
+
+  // 呼叫 listForms 查詢不存在之 2099 年度
+  const listForms2099 = callDoPost(gas, {
+    secret: TEST_SHARED_SECRET,
+    action: 'listForms',
+    payload: { year: 2099 },
+  });
+  assert(listForms2099.ok === true && Array.isArray(listForms2099.data) && listForms2099.data.length === 0, '查詢不存在年度之表單紀錄回傳空陣列 []');
+
+  // 呼叫 getForm 查詢不存在之 2099 年度表單
+  const getForm2099 = callDoPost(gas, {
+    secret: TEST_SHARED_SECRET,
+    action: 'getForm',
+    payload: { formId: 'FRM-2099-000001', year: 2099 },
+  });
+  assert(getForm2099.ok === false && getForm2099.error.code === 'NOT_FOUND', '查詢不存在年度之單筆表單回傳 NOT_FOUND');
+
+  // 驗證 Spreadsheet 數量與「年度設定」列數完全不變
+  const filesCountAfterRead = env._internal.files.size;
+  const yearConfigRowsAfterRead = yearConfigSheet.getDataRange().getValues().length;
+  assert(filesCountBeforeRead === filesCountAfterRead, '純讀取查詢不存在年度後，Spreadsheet 檔案數量完全無增加');
+  assert(yearConfigRowsBeforeRead === yearConfigRowsAfterRead, '純讀取查詢不存在年度後，主檔「年度設定」列數完全無增加');
+
+  // ----------------------------------------------------
+  // 測試 10: INTERNAL_ERROR 去敏防洩漏檢驗
+  // ----------------------------------------------------
+  console.log('\n【測試群組 10：INTERNAL_ERROR 去敏防洩漏檢驗】');
+  // 暫時抽換 handleListProjects 為拋出含有敏感內部 Drive/Sheet 訊息之例外
+  const originalHandler = gas.handleListProjects;
+  gas.handleListProjects = function () {
+    throw new Error('Google Drive quota exceeded for Sheet ID 1A2B3C-SECRET-XYZ');
+  };
+
+  try {
+    const errorRes = callDoPost(gas, {
+      secret: TEST_SHARED_SECRET,
+      action: 'listProjects',
+      payload: {},
+    });
+
+    assert(errorRes.ok === false, '攔截到伺服器例外回傳 ok: false');
+    assert(errorRes.error.code === 'INTERNAL_ERROR', '未捕獲例外之錯誤碼為 INTERNAL_ERROR');
+    assert(errorRes.error.message === '伺服器處理請求時發生錯誤', '錯誤訊息已泛化為「伺服器處理請求時發生錯誤」');
+    assert(!JSON.stringify(errorRes).includes('1A2B3C-SECRET-XYZ'), 'Client 端回應中絕對未包含敏感 Drive ID 與原始例外訊息');
+  } finally {
+    gas.handleListProjects = originalHandler;
+  }
+
   console.log('\n====================================================');
   console.log(`測試結果：${passed} 項通過，${failed} 項失敗`);
   console.log('====================================================');

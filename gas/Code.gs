@@ -138,10 +138,21 @@ function doPost(e) {
     Logger.log('[API] 執行成功 (action: ' + actionName + ')');
     return createSuccessResponse(resultData);
   } catch (err) {
-    Logger.log('[API] 執行失敗 (action: ' + actionName + '): ' + (err.message || 'unknown error'));
-    var code = err.code || 'INTERNAL_ERROR';
-    var msg = err.message || '處理請求時發生伺服器內部錯誤';
-    return createErrorResponse(code, msg);
+    var rawMessage = err && err.message ? String(err.message) : 'unknown error';
+    Logger.log('[API] 執行失敗 (action: ' + actionName + '): ' + rawMessage);
+
+    var code = (err && err.code) ? err.code : 'INTERNAL_ERROR';
+    var clientMessage;
+
+    if (code === 'INTERNAL_ERROR') {
+      // 未知錯誤一律使用泛化安全訊息，絕不洩漏系統例外細節或 ID
+      clientMessage = '伺服器處理請求時發生錯誤';
+    } else {
+      // 已知業務錯誤（VALIDATION_ERROR, NOT_FOUND 等）回傳專用中文錯誤提示
+      clientMessage = err.message || '業務請求處理失敗';
+    }
+
+    return createErrorResponse(code, clientMessage);
   }
 }
 

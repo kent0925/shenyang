@@ -11,25 +11,23 @@
  * 4. 錯誤映射與隱私保護：日誌中嚴禁輸出 Token、Secret 與銀行帳號。
  */
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { IncomingMessage, ServerResponse } from 'http';
 
-// 若無 @vercel/node 型別定義時的通用介面支援
-interface ExtendedRequest {
-  method?: string;
-  headers: Record<string, string | string[] | undefined>;
+export interface VercelApiRequest extends IncomingMessage {
   body?: any;
+  query?: Record<string, string | string[]>;
+  cookies?: Record<string, string>;
 }
 
-interface ExtendedResponse {
-  status: (code: number) => ExtendedResponse;
-  json: (body: any) => void;
-  setHeader: (name: string, value: string) => void;
-  end: () => void;
+export interface VercelApiResponse extends ServerResponse {
+  status: (statusCode: number) => VercelApiResponse;
+  json: (jsonBody: any) => void;
+  send: (body: any) => void;
 }
 
 export default async function handler(
-  req: ExtendedRequest | VercelRequest,
-  res: ExtendedResponse | VercelResponse
+  req: VercelApiRequest,
+  res: VercelApiResponse
 ) {
   // 1. 僅允許 POST 方法
   if (req.method !== 'POST') {

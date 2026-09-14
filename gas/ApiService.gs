@@ -235,7 +235,10 @@ function handleListBudgetItems(payload) {
   var year = (payload && payload.year) ? parseInt(payload.year, 10) : getCurrentYear();
   var projectId = (payload && payload.projectId) ? String(payload.projectId).trim() : '';
 
-  var yearSs = getYearDatabase(year) || createYearDatabase(year);
+  // 純讀取 API：不得建立年度資料庫，若不存在直接回傳空陣列
+  var yearSs = getYearDatabase(year);
+  if (!yearSs) return [];
+
   var sheet = yearSs.getSheetByName(SHEETS.BUDGET_ITEMS);
   if (!sheet) return [];
 
@@ -344,7 +347,10 @@ function handleListForms(payload) {
   var vendorId = (payload && payload.vendorId) ? String(payload.vendorId).trim() : '';
   var status = (payload && payload.status) ? String(payload.status).trim() : '';
 
-  var yearSs = getYearDatabase(year) || createYearDatabase(year);
+  // 純讀取 API：不得建立年度資料庫，若不存在直接回傳空陣列
+  var yearSs = getYearDatabase(year);
+  if (!yearSs) return [];
+
   var sheet = yearSs.getSheetByName(SHEETS.FORMS);
   if (!sheet) return [];
 
