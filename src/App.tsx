@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Header } from './components/layout/Header';
 import { TabNav, FormTab } from './components/layout/TabNav';
 import { SealApprovalForm } from './components/forms/SealApprovalForm';
@@ -12,6 +12,7 @@ import { generateSealApprovalExcel } from './generators/excel/sealApprovalExcel'
 import { generatePaymentRequestExcel } from './generators/excel/paymentRequestExcel';
 import { generatePdfFromElement } from './generators/pdf/pdfHelper';
 import { getSealApprovalBaseFilename, getPaymentRequestBaseFilename } from './utils/filename';
+import { validateTaxId } from './services/companyLookup';
 import { Eye, FileSpreadsheet, FileText, Download, Loader2, CheckCircle2 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -52,6 +53,12 @@ export const App: React.FC = () => {
       if (!paymentData.applyDate) newErrors.applyDate = '請選擇申請日期';
       if (!paymentData.vendor.trim()) newErrors.vendor = '請填寫受款人／廠商';
       if (!paymentData.currentAmount.trim()) newErrors.currentAmount = '請填寫本期請款／驗收／預付額';
+      if (paymentData.vendorTaxId && paymentData.vendorTaxId.trim()) {
+        const taxId = paymentData.vendorTaxId.trim();
+        if (taxId.length !== 8 || !validateTaxId(taxId)) {
+          newErrors.vendorTaxId = '統一編號必須為合法的 8 碼數字';
+        }
+      }
     }
 
     setErrors(newErrors);

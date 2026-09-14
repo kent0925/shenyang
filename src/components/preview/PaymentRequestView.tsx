@@ -1,7 +1,7 @@
-﻿import React from 'react';
+import React from 'react';
 import { PaymentRequestData } from '../../models/paymentRequest';
 import { parseDateParts } from '../../utils/date';
-import { calculatePayableAmount, formatBankAccount, formatCurrency } from '../../utils/format';
+import { calculatePayableAmount, formatCurrency, formatPaymentBankAccount } from '../../utils/format';
 
 interface Props {
   data: PaymentRequestData;
@@ -20,7 +20,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
     data.penaltyDiscount
   );
 
-  const formattedBank = formatBankAccount(data.bankAccount);
+  const formattedBank = formatPaymentBankAccount(data);
   const descLines = data.description ? data.description.split('\n') : [];
   const displayLinesCount = Math.max(descLines.length, 12);
   const displayLines: string[] = [];
@@ -63,7 +63,12 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
             <td className="w-24 bg-slate-100 font-bold p-1 text-center border-r border-slate-900">請購單編號</td>
             <td className="w-32 p-1 border-r border-slate-900 font-mono">{data.requisitionNumber}</td>
             <td className="w-24 bg-slate-100 font-bold p-1 text-center border-r border-slate-900">受款人/廠商</td>
-            <td className="p-1 border-r border-slate-900 font-medium">{data.vendor}</td>
+            <td className="p-1 border-r border-slate-900 font-medium">
+              <div>{data.vendor}</div>
+              {data.vendorTaxId?.trim() ? (
+                <div className="text-[10px] text-slate-600 font-mono">統編：{data.vendorTaxId.trim()}</div>
+              ) : null}
+            </td>
             <td rowSpan={3} className="w-7 bg-slate-100 font-bold p-1 text-center border-r border-slate-900 align-middle leading-snug">
               申請部門
             </td>

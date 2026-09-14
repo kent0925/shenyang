@@ -1,7 +1,7 @@
-﻿import JSZip from 'jszip';
+import JSZip from 'jszip';
 import { PaymentRequestData } from '../../models/paymentRequest';
 import { parseDateParts } from '../../utils/date';
-import { formatBankAccount } from '../../utils/format';
+import { formatPaymentBankAccount } from '../../utils/format';
 import { clearCellRange, updateSheetCell } from './ooxmlHelper';
 
 /**
@@ -50,7 +50,10 @@ export async function generatePaymentRequestExcel(data: PaymentRequestData): Pro
   sheet1Xml = updateSheetCell(sheet1Xml, 'I5', data.requisitionNumber);
 
   // 受款人/廠商 (N5)
-  sheet1Xml = updateSheetCell(sheet1Xml, 'N5', data.vendor);
+  const vendorDisplay = data.vendorTaxId?.trim()
+    ? `${data.vendor}（統編：${data.vendorTaxId.trim()}）`
+    : data.vendor;
+  sheet1Xml = updateSheetCell(sheet1Xml, 'N5', vendorDisplay);
 
   // 費用歸屬部門 (E7)
   sheet1Xml = updateSheetCell(sheet1Xml, 'E7', data.department);
@@ -59,7 +62,7 @@ export async function generatePaymentRequestExcel(data: PaymentRequestData): Pro
   sheet1Xml = updateSheetCell(sheet1Xml, 'I7', data.contractNumber);
 
   // 受款人/廠商匯款帳號 (N7)
-  const formattedBank = formatBankAccount(data.bankAccount);
+  const formattedBank = formatPaymentBankAccount(data);
   sheet1Xml = updateSheetCell(sheet1Xml, 'N7', formattedBank);
 
   // 費用性質 (E10)

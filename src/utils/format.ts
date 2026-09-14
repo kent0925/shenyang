@@ -1,34 +1,33 @@
-﻿import { BankAccountInfo } from '../models/paymentRequest';
+import { BankAccountInfo, PaymentRequestData } from '../models/paymentRequest';
 
-/**
- * 格式化銀行帳號為純文字（供寫入 Excel N7 儲存格與顯示）
- */
-export function formatBankAccount(info: BankAccountInfo): string {
+export function formatBankAccount(
+  info?: Partial<BankAccountInfo>,
+  data?: Partial<PaymentRequestData>
+): string {
+  const bankCode = (data?.bankCode || info?.bankCode || '').trim();
+  const bankName = (data?.bankName || info?.bankName || '').trim();
+  const branchName = (data?.branchName || info?.branch || '').trim();
+  const accountName = (data?.accountName || info?.accountName || '').trim();
+  const accountNumber = (data?.accountNumber || info?.accountNumber || '').trim();
+
+  const bankParts = [bankCode, bankName, branchName].filter(Boolean).join(' ');
   const parts: string[] = [];
 
-  if (info.type === 'code') {
-    let bankStr = info.bankCode ? `銀行代碼:${info.bankCode}` : '';
-    if (info.branch) {
-      bankStr += bankStr ? `-${info.branch}` : `分行:${info.branch}`;
-    }
-    if (bankStr) parts.push(bankStr);
-  } else {
-    let bankStr = info.bankName ? `銀行:${info.bankName}` : '';
-    if (info.branch) {
-      bankStr += bankStr ? ` ${info.branch}` : `分行:${info.branch}`;
-    }
-    if (bankStr) parts.push(bankStr);
+  if (bankParts) {
+    parts.push(`銀行：${bankParts}`);
+  }
+  if (accountName) {
+    parts.push(`戶名：${accountName}`);
+  }
+  if (accountNumber) {
+    parts.push(`帳號：${accountNumber}`);
   }
 
-  if (info.accountName) {
-    parts.push(`戶名:${info.accountName}`);
-  }
+  return parts.join(' / ');
+}
 
-  if (info.accountNumber) {
-    parts.push(`帳號:${info.accountNumber}`);
-  }
-
-  return parts.join('\n');
+export function formatPaymentBankAccount(data: PaymentRequestData): string {
+  return formatBankAccount(data.bankAccount, data);
 }
 
 /**

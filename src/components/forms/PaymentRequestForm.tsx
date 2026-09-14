@@ -1,8 +1,26 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { PaymentRequestData } from '../../models/paymentRequest';
 import { DEFAULT_COMPANIES } from '../../models/sealApproval';
-import { AlertCircle, Calendar, DollarSign, Building2 } from 'lucide-react';
+import {
+  AlertCircle,
+  Calendar,
+  DollarSign,
+  Building2,
+  Search,
+  Loader2,
+  CheckCircle2,
+  ShieldCheck,
+  Building,
+  Landmark,
+} from 'lucide-react';
 import { calculatePayableAmount, formatCurrency } from '../../utils/format';
+import { validateTaxId, lookupCompanyByTaxId } from '../../services/companyLookup';
+import {
+  loadBanks,
+  findBankByCode,
+  findBranchByCode,
+  BankItem,
+} from '../../services/bankLookup';
 
 interface Props {
   data: PaymentRequestData;
@@ -11,10 +29,240 @@ interface Props {
 }
 
 export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) => {
-  const updateBankAccount = (fields: Partial<PaymentRequestData['bankAccount']>) => {
+  const [banks, setBanks] = useState<BankItem[]>([]);
+  const [isSearchingCompany, setIsSearchingCompany] = useState(false);
+  const [companySearchMsg, setCompanySearchMsg] = useState<{
+    type: 'success' | 'error' | 'info';
+    text: string;
+  } | null>(null);
+
+  useEffect(() => {
+    loadBanks()
+      .then(setBanks)
+      .catch((err) => {
+        console.warn('載入金融機構資料失敗:', err);
+      });
+  }, []);
+
+  const taxIdValue = (data.vendorTaxId || '').trim();
+  const isTaxIdValid = validateTaxId(taxIdValue);
+
+  const handleTaxIdLookup = async () => {
+    if (!taxIdValue) {
+      setCompanySearchMsg({ type: 'error', text: '請輸入統一編號' });
+      return;
+    }
+    if (taxIdValue.length !== 8) {
+      setCompanySearchMsg({ type: 'error', text: '請輸入完整 8 碼統一編號' });
+      return;
+    }
+    if (!validateTaxId(taxIdValue)) {
+      setCompanySearchMsg({ type: 'error', text: '統一編號檢核碼不符，請確認是否輸入正確' });
+      return;
+    }
+
+    setIsSearchingCompany(true);
+    setCompanySearchMsg(null);
+
+    try {
+      const result = await lookupCompanyByTaxId(taxIdValue);
+      if (result && result.companyName) {
+        const newVendor = result.companyName;
+        const updates: Partial<PaymentRequestData> = {
+          vendor: newVendor,
+        };
+
+        if (data.accountNameSameAsVendor !== false) {
+          updates.accountName = newVendor;
+          updates.bankAccount = {
+            ...data.bankAccount,
+            accountName: newVendor,
+          };
+        }
+
+        onChange({
+          ...data,
+          ...updates,
+        });
+
+        setCompanySearchMsg({
+          type: 'success',
+          text: `已自動帶入商工登記名稱：${newVendor}`,
+        });
+      } else {
+        setCompanySearchMsg({
+          type: 'info',
+          text: '經濟部公開商工登記查無此統一編號，請手動輸入廠商名稱',
+        });
+      }
+    } catch (err: any) {
+      setCompanySearchMsg({
+        type: 'error',
+        text: err.message || '查詢服務連線異常，請手動輸入廠商名稱',
+      });
+    } finally {
+      setIsSearchingCompany(false);
+    }
+  };
+
+  const handleVendorChange = (newVendor: string) => {
+    const updates: Partial<PaymentRequestData> = {
+      vendor: newVendor,
+    };
+    if (data.accountNameSameAsVendor !== false) {
+      updates.accountName = newVendor;
+      updates.bankAccount = {
+        ...data.bankAccount,
+        accountName: newVendor,
+      };
+    }
     onChange({
       ...data,
-      bankAccount: { ...data.bankAccount, ...fields },
+      ...updates,
+    });
+  };
+
+  const currentBank = banks.find(
+    (b) => b.code === data.bankCode || (data.bankName && b.name === data.bankName)
+  );
+  const currentBranches = currentBank ? currentBank.branches : [];
+
+  const handleBankCodeChange = (code: string) => {
+    const cleanCode = code.trim();
+    const matched = findBankByCode(banks, cleanCode);
+    const bankName = matched ? matched.name : (cleanCode === '' ? '' : data.bankName || '');
+
+    onChange({
+      ...data,
+      bankCode: cleanCode,
+      bankName,
+      branchCode: '',
+      branchName: '',
+      bankAccount: {
+        ...data.bankAccount,
+        bankCode: cleanCode,
+        bankName,
+        branch: '',
+      },
+    });
+  };
+
+  const handleBankSelect = (selectedCode: string) => {
+    if (!selectedCode) {
+      onChange({
+        ...data,
+        bankCode: '',
+        bankName: '',
+        branchCode: '',
+        branchName: '',
+        bankAccount: {
+          ...data.bankAccount,
+          bankCode: '',
+          bankName: '',
+          branch: '',
+        },
+      });
+      return;
+    }
+    const bank = findBankByCode(banks, selectedCode);
+    if (bank) {
+      onChange({
+        ...data,
+        bankCode: bank.code,
+        bankName: bank.name,
+        branchCode: '',
+        branchName: '',
+        bankAccount: {
+          ...data.bankAccount,
+          bankCode: bank.code,
+          bankName: bank.name,
+          branch: '',
+        },
+      });
+    }
+  };
+
+  const handleBranchCodeChange = (code: string) => {
+    const cleanCode = code.trim();
+    const matched = findBranchByCode(currentBranches, cleanCode);
+    const branchName = matched ? matched.name : (cleanCode === '' ? '' : data.branchName || '');
+
+    onChange({
+      ...data,
+      branchCode: cleanCode,
+      branchName,
+      bankAccount: {
+        ...data.bankAccount,
+        branch: branchName || cleanCode,
+      },
+    });
+  };
+
+  const handleBranchSelect = (selectedCode: string) => {
+    if (!selectedCode) {
+      onChange({
+        ...data,
+        branchCode: '',
+        branchName: '',
+        bankAccount: {
+          ...data.bankAccount,
+          branch: '',
+        },
+      });
+      return;
+    }
+    const branch = findBranchByCode(currentBranches, selectedCode);
+    if (branch) {
+      onChange({
+        ...data,
+        branchCode: branch.code,
+        branchName: branch.name,
+        bankAccount: {
+          ...data.bankAccount,
+          branch: branch.name,
+        },
+      });
+    }
+  };
+
+  const handleAccountSameToggle = (checked: boolean) => {
+    if (checked) {
+      onChange({
+        ...data,
+        accountNameSameAsVendor: true,
+        accountName: data.vendor,
+        bankAccount: {
+          ...data.bankAccount,
+          accountName: data.vendor,
+        },
+      });
+    } else {
+      onChange({
+        ...data,
+        accountNameSameAsVendor: false,
+      });
+    }
+  };
+
+  const handleAccountNameChange = (name: string) => {
+    onChange({
+      ...data,
+      accountName: name,
+      bankAccount: {
+        ...data.bankAccount,
+        accountName: name,
+      },
+    });
+  };
+
+  const handleAccountNumberChange = (num: string) => {
+    onChange({
+      ...data,
+      accountNumber: num,
+      bankAccount: {
+        ...data.bankAccount,
+        accountNumber: num,
+      },
     });
   };
 
@@ -156,108 +404,258 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
       {/* 區塊二：受款人與匯款資訊 (N5, N7) */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
         <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center justify-between">
-          <span>受款人／廠商與匯款帳號 (N5, N7)</span>
+          <div className="flex items-center gap-2">
+            <Building className="w-4 h-4 text-blue-600" />
+            <span>受款人／廠商與匯款帳號 (N5, N7)</span>
+          </div>
           <span className="text-xs text-slate-500 font-normal">純前端本機結構化輸入</span>
         </h3>
 
-        {/* 受款人/廠商 (N5) */}
-        <div className="mb-4">
-          <label className="block text-xs font-semibold text-slate-700 mb-1">
-            受款人／廠商名稱 (N5) <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            placeholder="請輸入廠商全名或個人受款姓名"
-            value={data.vendor}
-            onChange={(e) => onChange({ ...data, vendor: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
-          />
-          {errors.vendor && <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>}
+        {/* 統一編號與受款人/廠商 (N5) */}
+        <div className="p-3 bg-white border border-slate-200 rounded-lg mb-4 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* 統一編號 */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700">
+                  統一編號（選填）
+                </label>
+                {taxIdValue.length > 0 && (
+                  <span className="text-[11px]">
+                    {taxIdValue.length === 8 ? (
+                      isTaxIdValid ? (
+                        <span className="text-emerald-600 font-medium flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> 8碼校驗碼合規
+                        </span>
+                      ) : (
+                        <span className="text-red-500 font-medium flex items-center gap-1">
+                          <AlertCircle className="w-3.5 h-3.5" /> 校驗碼不符
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-slate-400">已輸入 {taxIdValue.length}/8 碼</span>
+                    )}
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  maxLength={8}
+                  placeholder="8 碼數字"
+                  value={data.vendorTaxId || ''}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 8);
+                    onChange({ ...data, vendorTaxId: val });
+                    if (companySearchMsg) setCompanySearchMsg(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleTaxIdLookup();
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white font-mono tracking-wider"
+                />
+                <button
+                  type="button"
+                  onClick={handleTaxIdLookup}
+                  disabled={isSearchingCompany || taxIdValue.length !== 8}
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors flex-shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isSearchingCompany ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>查詢中</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-3.5 h-3.5" />
+                      <span>查詢公司</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              {companySearchMsg && (
+                <p
+                  className={`text-xs mt-1.5 flex items-center gap-1 ${
+                    companySearchMsg.type === 'success'
+                      ? 'text-emerald-600'
+                      : companySearchMsg.type === 'error'
+                      ? 'text-red-500'
+                      : 'text-blue-600'
+                  }`}
+                >
+                  {companySearchMsg.type === 'success' && <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />}
+                  {companySearchMsg.type === 'error' && <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+                  <span>{companySearchMsg.text}</span>
+                </p>
+              )}
+            </div>
+
+            {/* 受款人/廠商名稱 (N5) */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                受款人／廠商名稱 (N5) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="請輸入廠商全名或個人受款姓名"
+                value={data.vendor}
+                onChange={(e) => handleVendorChange(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+              />
+              {errors.vendor && <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>}
+            </div>
+          </div>
         </div>
 
         {/* 銀行帳號結構化輸入 (N7) */}
-        <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-3">
-          <div className="flex items-center gap-4 text-xs font-semibold text-slate-700">
-            <span>銀行識別方式：</span>
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="radio"
-                name="bankType"
-                checked={data.bankAccount.type === 'code'}
-                onChange={() => updateBankAccount({ type: 'code' })}
-                className="text-blue-600 focus:ring-blue-500"
-              />
-              <span>使用銀行代碼</span>
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="radio"
-                name="bankType"
-                checked={data.bankAccount.type === 'name'}
-                onChange={() => updateBankAccount({ type: 'name' })}
-                className="text-blue-600 focus:ring-blue-500"
-              />
-              <span>使用銀行全名</span>
-            </label>
+        <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+              <Landmark className="w-4 h-4 text-slate-600" />
+              <span>匯款銀行與帳號明細 (N7)</span>
+            </div>
+            <span className="text-[11px] text-slate-400">依金管會金融機構代碼與分行資料庫雙向連動</span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-            {data.bankAccount.type === 'code' ? (
-              <div>
-                <label className="block text-xs text-slate-600 mb-1">銀行代碼（如 007）</label>
-                <input
-                  type="text"
-                  placeholder="3碼代號"
-                  value={data.bankAccount.bankCode}
-                  onChange={(e) => updateBankAccount({ bankCode: e.target.value })}
-                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
-                />
-              </div>
-            ) : (
-              <div>
-                <label className="block text-xs text-slate-600 mb-1">銀行全名</label>
-                <input
-                  type="text"
-                  placeholder="例如：第一商業銀行"
-                  value={data.bankAccount.bankName}
-                  onChange={(e) => updateBankAccount({ bankName: e.target.value })}
-                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">分行（代碼或名稱）</label>
+          {/* 第一列：銀行代碼與銀行名稱 */}
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div className="sm:col-span-4">
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                銀行代碼（3 碼）
+              </label>
               <input
                 type="text"
-                placeholder="例如：城東分行 或 0144"
-                value={data.bankAccount.branch}
-                onChange={(e) => updateBankAccount({ branch: e.target.value })}
-                className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">戶名</label>
-              <input
-                type="text"
-                placeholder="受款帳戶戶名"
-                value={data.bankAccount.accountName}
-                onChange={(e) => updateBankAccount({ accountName: e.target.value })}
-                className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">銀行帳號</label>
-              <input
-                type="text"
-                placeholder="匯款帳號"
-                value={data.bankAccount.accountNumber}
-                onChange={(e) => updateBankAccount({ accountNumber: e.target.value })}
+                maxLength={3}
+                placeholder="如 007"
+                value={data.bankCode || ''}
+                onChange={(e) => handleBankCodeChange(e.target.value)}
                 className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
               />
             </div>
+            <div className="sm:col-span-8">
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                銀行名稱（可下拉選取或由代碼自動帶入）
+              </label>
+              <select
+                value={currentBank ? currentBank.code : ''}
+                onChange={(e) => handleBankSelect(e.target.value)}
+                className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">-- 請選擇或輸入銀行代碼 --</option>
+                {banks.map((b) => (
+                  <option key={b.code} value={b.code}>
+                    {b.code} {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* 第二列：分行代碼與分行名稱 */}
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div className="sm:col-span-4">
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                分行代碼（4 碼）
+              </label>
+              <input
+                type="text"
+                maxLength={4}
+                placeholder="如 1440"
+                value={data.branchCode || ''}
+                onChange={(e) => handleBranchCodeChange(e.target.value)}
+                className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+              />
+            </div>
+            <div className="sm:col-span-8">
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                分行名稱（已依銀行篩選分支機構）
+              </label>
+              {currentBranches.length > 0 ? (
+                <select
+                  value={data.branchCode || ''}
+                  onChange={(e) => handleBranchSelect(e.target.value)}
+                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">-- 請選擇分行 ({currentBranches.length} 家) --</option>
+                  {currentBranches.map((br) => (
+                    <option key={br.code} value={br.code}>
+                      {br.code} {br.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  placeholder="請先選擇銀行或手動輸入分行名稱"
+                  value={data.branchName || ''}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    onChange({
+                      ...data,
+                      branchName: name,
+                      bankAccount: { ...data.bankAccount, branch: name },
+                    });
+                  }}
+                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+              )}
+            </div>
+          </div>
+
+          {/* 第三列：戶名與銀行帳號 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-600">戶名</label>
+                <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={data.accountNameSameAsVendor !== false}
+                    onChange={(e) => handleAccountSameToggle(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>同受款人／廠商名稱</span>
+                </label>
+              </div>
+              <input
+                type="text"
+                readOnly={data.accountNameSameAsVendor !== false}
+                placeholder="戶名"
+                value={
+                  data.accountNameSameAsVendor !== false
+                    ? data.vendor
+                    : data.accountName || data.bankAccount?.accountName || ''
+                }
+                onChange={(e) => handleAccountNameChange(e.target.value)}
+                className={`w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 ${
+                  data.accountNameSameAsVendor !== false ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'bg-white'
+                }`}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                銀行帳號（保留前置 0）
+              </label>
+              <input
+                type="text"
+                placeholder="匯款帳號（如 007123456789）"
+                value={data.accountNumber || data.bankAccount?.accountNumber || ''}
+                onChange={(e) => handleAccountNumberChange(e.target.value)}
+                className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+              />
+            </div>
+          </div>
+
+          {/* 隱私與安全提示 */}
+          <div className="mt-2 pt-2.5 border-t border-slate-100 flex items-start gap-2 text-[11px] text-slate-500 leading-relaxed">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+            <span>
+              統一編號查詢僅即時透過官方公開商工登記 API 取得公司名稱，本系統不儲存、不記錄任何統編或商工資料；所有表單資料、銀行帳號與檔案處理均只在您的本機瀏覽器內完成。
+            </span>
           </div>
         </div>
       </div>
