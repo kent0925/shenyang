@@ -13,8 +13,7 @@ export const SealApprovalView: React.FC<Props> = ({ data, id = 'seal-approval-vi
   const isJieYin = data.types.includes('借印');
 
   const descLines = data.description ? data.description.split('\n') : [];
-  // 至少顯示 10 列留白
-  const displayLinesCount = Math.max(descLines.length, 12);
+  const displayLinesCount = Math.max(descLines.length, 14);
   const displayLines: string[] = [];
   for (let i = 0; i < displayLinesCount; i++) {
     displayLines.push(descLines[i] || '');
@@ -23,50 +22,50 @@ export const SealApprovalView: React.FC<Props> = ({ data, id = 'seal-approval-vi
   return (
     <div
       id={id}
-      className="bg-white text-slate-900 p-8 max-w-[800px] mx-auto text-sm leading-normal border border-slate-300 shadow-sm print:border-none print:shadow-none font-sans"
-      style={{ minHeight: '1050px' }}
+      className="bg-white text-slate-900 p-8 max-w-[800px] mx-auto text-xs leading-normal border border-slate-300 shadow-sm print:border-none print:shadow-none font-sans"
+      style={{ minHeight: '1100px' }}
     >
       {/* 頁首公司抬頭 */}
       <div className="text-center mb-1">
-        <h1 className="text-2xl font-bold tracking-wider">{data.company || '公司名稱'}</h1>
-        <h2 className="text-lg font-semibold tracking-widest mt-1">各項類別申請單</h2>
+        <h1 className="text-2xl font-bold tracking-wider">{data.company || '昇陽開發實業股份有限公司'}</h1>
+        <h2 className="text-base font-semibold tracking-widest mt-1">各項類別申請單</h2>
       </div>
 
       {/* 類別核取方塊 */}
-      <div className="flex justify-center gap-12 py-2 mb-2 text-base font-medium border-y-2 border-slate-800">
+      <div className="flex justify-center gap-14 py-2 mb-2 text-sm font-semibold border-y-2 border-slate-900">
         <label className="flex items-center gap-2">
-          <span className="text-lg">{isQianCheng ? '☑' : '☐'}</span> 簽呈
+          <span className="text-base">{isQianCheng ? '☑' : '☐'}</span> 簽呈
         </label>
         <label className="flex items-center gap-2">
-          <span className="text-lg">{isYongYin ? '☑' : '☐'}</span> 用印
+          <span className="text-base">{isYongYin ? '☑' : '☐'}</span> 用印
         </label>
         <label className="flex items-center gap-2">
-          <span className="text-lg">{isJieYin ? '☑' : '☐'}</span> 借印
+          <span className="text-base">{isJieYin ? '☑' : '☐'}</span> 借印
         </label>
       </div>
 
       {/* 主表格 */}
-      <table className="w-full border-collapse border-2 border-slate-800 mb-4">
+      <table className="w-full border-collapse border-2 border-slate-900 mb-3 text-xs">
         <tbody>
           {/* 主旨與申請日 */}
-          <tr className="border-b border-slate-800">
-            <td className="w-20 bg-slate-100 font-bold px-3 py-2 text-center border-r border-slate-800 tracking-wider">
+          <tr className="border-b border-slate-900">
+            <td className="w-20 bg-slate-100 font-bold px-3 py-1.5 text-center border-r border-slate-900 tracking-wider">
               主 旨
             </td>
-            <td className="px-3 py-2 font-medium border-r border-slate-800">
-              {data.subject || '（未填寫）'}
+            <td className="px-3 py-1.5 font-medium border-r border-slate-900">
+              {data.subject || ''}
             </td>
-            <td className="w-20 bg-slate-100 font-bold px-3 py-2 text-center border-r border-slate-800">
+            <td className="w-20 bg-slate-100 font-bold px-3 py-1.5 text-center border-r border-slate-900">
               申請日
             </td>
-            <td className="w-32 px-3 py-2 text-center font-mono">
+            <td className="w-36 px-3 py-1.5 text-center font-mono">
               {formatDateSlash(data.applyDate)}
             </td>
           </tr>
 
           {/* 說明標題 */}
-          <tr className="border-b border-slate-800 bg-slate-50">
-            <td colSpan={4} className="font-bold px-3 py-1.5 text-center tracking-widest">
+          <tr className="border-b border-slate-900 bg-slate-100">
+            <td colSpan={4} className="font-bold px-3 py-1 text-center tracking-widest">
               說　　　　明
             </td>
           </tr>
@@ -76,7 +75,7 @@ export const SealApprovalView: React.FC<Props> = ({ data, id = 'seal-approval-vi
             <td colSpan={4} className="p-0 align-top">
               <div className="divide-y divide-slate-200">
                 {displayLines.map((line, idx) => (
-                  <div key={idx} className="px-3 py-1.5 min-h-[28px] text-slate-800 whitespace-pre-wrap break-words">
+                  <div key={idx} className="px-3 py-1 min-h-[22px] text-slate-800 whitespace-pre-wrap break-words">
                     {line}
                   </div>
                 ))}
@@ -85,56 +84,69 @@ export const SealApprovalView: React.FC<Props> = ({ data, id = 'seal-approval-vi
           </tr>
 
           {/* 印章借出/歸還簽收 */}
-          <tr className="border-t-2 border-slate-800">
-            <td colSpan={2} className="p-2 border-r border-slate-800 text-xs text-slate-500">
-              （用印備註區）
-            </td>
-            <td className="bg-slate-100 font-bold px-2 py-2 text-center border-r border-slate-800 text-xs">
+          <tr className="border-t-2 border-slate-900">
+            <td colSpan={2} rowSpan={2} className="p-2 border-r border-slate-900 text-xs text-slate-400"></td>
+            <td className="bg-slate-100 font-bold px-2 py-1 text-center border-r border-slate-900">
               印章借出簽收
             </td>
-            <td className="px-2 py-2 text-center border-slate-800 min-h-[36px]"></td>
+            <td className="px-2 py-1 text-center border-slate-900 h-7"></td>
           </tr>
-          <tr className="border-t border-slate-800">
-            <td colSpan={2} className="p-2 border-r border-slate-800 text-xs text-slate-500"></td>
-            <td className="bg-slate-100 font-bold px-2 py-2 text-center border-r border-slate-800 text-xs">
+          <tr className="border-t border-slate-900">
+            <td className="bg-slate-100 font-bold px-2 py-1 text-center border-r border-slate-900">
               印章歸還簽收
             </td>
-            <td className="px-2 py-2 text-center border-slate-800 min-h-[36px]"></td>
+            <td className="px-2 py-1 text-center border-slate-900 h-7"></td>
           </tr>
 
-          {/* 簽核欄位 */}
-          <tr className="border-t-2 border-slate-800 text-center bg-slate-100 font-bold">
-            <td className="py-1.5 border-r border-slate-800 w-1/4">董事長</td>
-            <td className="py-1.5 border-r border-slate-800 w-1/4">特助</td>
-            <td className="py-1.5 border-r border-slate-800 w-1/4">部門主管</td>
-            <td className="py-1.5 w-1/4">經辦</td>
+          {/* 簽核欄位標題 */}
+          <tr className="border-t-2 border-slate-900 text-center bg-slate-100 font-bold">
+            <td className="py-1 border-r border-slate-900 w-1/4">董事長</td>
+            <td className="py-1 border-r border-slate-900 w-1/4">特助</td>
+            <td className="py-1 border-r border-slate-900 w-1/4">部門主管</td>
+            <td className="py-1 border-slate-900 w-1/4">經辦</td>
           </tr>
-          <tr className="border-t border-slate-800 h-24">
-            <td className="border-r border-slate-800"></td>
-            <td className="border-r border-slate-800"></td>
-            <td className="border-r border-slate-800"></td>
-            <td></td>
+          {/* 簽核空白格 */}
+          <tr className="border-t border-slate-900 h-20">
+            <td className="border-r border-slate-900"></td>
+            <td className="border-r border-slate-900"></td>
+            <td className="border-r border-slate-900"></td>
+            <td className="border-slate-900"></td>
           </tr>
-          <tr className="border-t border-slate-800">
-            <td colSpan={3} className="border-r border-slate-800"></td>
-            <td className="text-xs text-slate-500 py-1 text-center">合約正本領取簽收</td>
+          <tr className="border-t border-slate-900">
+            <td colSpan={3} className="border-r border-slate-900"></td>
+            <td className="text-[11px] text-slate-600 py-1 text-center border-slate-900">合約正本領取簽收</td>
+          </tr>
+          <tr className="border-t border-slate-900 h-6">
+            <td colSpan={3} className="border-r border-slate-900"></td>
+            <td className="border-slate-900"></td>
           </tr>
         </tbody>
       </table>
 
       {/* 注意事項 */}
-      <div className="text-xs text-slate-600 mb-4 leading-relaxed">
-        <p className="font-semibold text-slate-700">注意事項：</p>
+      <div className="text-[11px] text-slate-600 mb-3 leading-normal">
+        <p className="font-bold text-slate-800">注意事項：</p>
         <p>一、簽呈取代用印申請，請同時勾選簽呈+用印，合約附件需一式兩份。</p>
         <p>二、採購簽呈需附至少三家(經辦二家,財務一家)廠商報價單，並將比價結果於簽呈上說明。</p>
       </div>
 
       {/* 編號區域 */}
-      <div className="grid grid-cols-3 gap-2 text-xs border border-slate-400 p-2 text-center">
-        <div>財產編號(財務單位)：_________</div>
-        <div>簽呈申請編號(歸檔單位)：_________</div>
-        <div>用印申請編號(用印單位)：_________</div>
-      </div>
+      <table className="w-full border-collapse border border-slate-900 text-[11px] text-center">
+        <thead>
+          <tr className="bg-slate-100 border-b border-slate-900 font-bold">
+            <td className="p-1 border-r border-slate-900 w-1/3">財產編號(財務單位)</td>
+            <td className="p-1 border-r border-slate-900 w-1/3">簽呈申請編號(歸檔單位)</td>
+            <td className="p-1 w-1/3">用印申請編號(用印單位)</td>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="h-8">
+            <td className="border-r border-slate-900"></td>
+            <td className="border-r border-slate-900"></td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 };
