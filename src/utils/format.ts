@@ -14,7 +14,7 @@ export function formatBankAccount(
   const parts: string[] = [];
 
   if (bankParts) {
-    parts.push(`銀行：${bankParts}`);
+    parts.push(`金融機構：${bankParts}`);
   }
   if (accountName) {
     parts.push(`戶名：${accountName}`);

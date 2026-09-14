@@ -32,39 +32,61 @@ export function validateTaxId(taxId: string): boolean {
   return false;
 }
 
-export interface CompanyLookupResult {
+export type VendorEntityType = 'company' | 'branch' | 'business' | 'unknown';
+
+export interface VendorLookupResult {
+  found: boolean;
   taxId: string;
-  companyName: string;
+  entityType: VendorEntityType;
+  name?: string;
+  companyName?: string;
 }
 
+export type CompanyLookupResult = VendorLookupResult;
+
 /**
- * 透過經濟部商工登記公開資料查詢公司名稱
+ * 透過經濟部商工登記公開資料查詢公司／商業／分公司名稱
  * 嚴格遵循隱私與資安規範：僅透過本站 Vercel Serverless Function Proxy (/api/company) 轉送經濟部官方商工 API。
+ * 支援傳入 AbortSignal 避免 Race Condition。
  * 絕不使用任何第三方非官方服務或鏡像。
  */
-export async function lookupCompanyByTaxId(taxId: string): Promise<CompanyLookupResult | null> {
+export async function lookupCompanyByTaxId(
+  taxId: string,
+  signal?: AbortSignal
+): Promise<VendorLookupResult | null> {
   const cleanId = (taxId || '').trim();
   if (!validateTaxId(cleanId)) {
     throw new Error('統一編號格式不正確，請輸入合法的 8 位數字');
   }
 
   try {
-    const res = await fetch(`/api/company?taxId=${cleanId}`);
+    const res = await fetch(`/api/company?taxId=${cleanId}`, { signal });
     if (res.ok) {
       const data = await res.json();
-      if (data.found && data.companyName) {
+      if (data.found && (data.name || data.companyName)) {
+        const resolvedName = (data.name || data.companyName).trim();
         return {
+          found: true,
           taxId: cleanId,
-          companyName: data.companyName.trim(),
+          entityType: data.entityType || 'company',
+          name: resolvedName,
+          companyName: resolvedName,
         };
       }
       if (data.found === false) {
-        return null; // 查無資料
+        return {
+          found: false,
+          taxId: cleanId,
+          entityType: data.entityType || 'unknown',
+        };
       }
     }
     // 非 200 回應（如 500, 502 等）
     throw new Error('公司資料服務暫時無法使用，請稍後再試或手動輸入廠商名稱。');
   } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw err;
+    }
     // 網路錯誤、HTTP 錯誤或政府服務無回應
     if (err.message === '公司資料服務暫時無法使用，請稍後再試或手動輸入廠商名稱。') {
       throw err;
