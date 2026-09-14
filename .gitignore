@@ -1,0 +1,7 @@
+﻿node_modules
+dist
+dist-test
+test_excel_gen.mjs
+*.local
+.DS_Store
+Thumbs.db
