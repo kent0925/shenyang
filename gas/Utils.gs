@@ -2,37 +2,72 @@
  * Utils.gs - 工具函式庫
  * 
  * 包含：
- * 1. 工作表結構初始化與格式化（純文字、數值、日期）
- * 2. 凍結列與 Header 格式
- * 3. 預設多餘空白工作表清理
- * 4. 日期時間格式化與輔助功能
+ * 1. 試算表地區與時區設定 (zh_TW, Asia/Taipei)
+ * 2. 工作表中文標頭初始化與平滑升級 (英文 Header -> 中文 Header)
+ * 3. 欄位格式化（純文字、數值千分位、yyyy/MM/dd、yyyy/MM/dd HH:mm:ss）
+ * 4. 預設空白工作表清理
+ * 5. JavaScript 原生 Date 物件產生
  */
 
 /**
+ * 套用試算表全域設定（Locale = zh_TW, TimeZone = Asia/Taipei）
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} spreadsheet 試算表物件
+ */
+function applySpreadsheetSettings(spreadsheet) {
+  if (!spreadsheet) return;
+
+  try {
+    if (spreadsheet.setSpreadsheetLocale) {
+      spreadsheet.setSpreadsheetLocale('zh_TW');
+    }
+  } catch (e) {
+    Logger.log('設定 Spreadsheet Locale 警告: ' + e.message);
+  }
+
+  try {
+    if (spreadsheet.setSpreadsheetTimeZone) {
+      spreadsheet.setSpreadsheetTimeZone('Asia/Taipei');
+    }
+  } catch (e) {
+    Logger.log('設定 Spreadsheet TimeZone 警告: ' + e.message);
+  }
+}
+
+/**
  * 設定工作表標頭與欄位資料格式
+ * 支援自動升級：若檢測到第一列為舊版英文 Key，自動平滑升級為中文 Header，保留後續所有資料列！
  * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet 目標工作表
- * @param {Object} schema 表格結構定義 (headers, textColumns, numberColumns, dateColumns)
+ * @param {Object} schema 表格結構定義 (包含 columns: [{ key, label, type }])
  */
 function setupSheetStructure(sheet, schema) {
-  if (!sheet || !schema || !schema.headers) {
+  if (!sheet || !schema || !schema.columns) {
     return;
   }
 
-  var headers = schema.headers;
+  var columns = schema.columns;
+  var headers = columns.map(function (c) { return c.label; });
+  var keys = columns.map(function (c) { return c.key; });
+
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
 
-  // 若工作表為全新空白，或無標頭
+  // 若工作表為全新空白，或無內容
   if (lastRow === 0 || lastCol === 0) {
-    // 寫入 Header
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   } else {
-    // 若已存在第一列，檢查是否缺少標頭
+    // 檢查現有第一列內容
     var existingHeaders = sheet.getRange(1, 1, 1, Math.max(lastCol, headers.length)).getValues()[0];
     var isBlankHeader = existingHeaders.every(function (val) {
       return val === '' || val === null || val === undefined;
     });
-    if (isBlankHeader) {
+
+    // 檢查是否包含舊版英文 Key
+    var isEnglishOrOldHeader = existingHeaders.some(function (val) {
+      return keys.indexOf(String(val).trim()) !== -1;
+    });
+
+    // 若為空白或舊版英文 Header，平滑升級第一列為中文 Header（不影響後續資料）
+    if (isBlankHeader || isEnglishOrOldHeader) {
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     }
   }
@@ -43,7 +78,7 @@ function setupSheetStructure(sheet, schema) {
   // Header 格式：加粗
   sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
 
-  // 確保工作表至少有 100 列可供格式化
+  // 確保工作表至少有 100 列可供設定格式
   var maxRows = sheet.getMaxRows();
   if (maxRows < 100) {
     sheet.insertRowsAfter(maxRows, 100 - maxRows);
@@ -52,20 +87,31 @@ function setupSheetStructure(sheet, schema) {
   var formatRowCount = Math.max(maxRows - 1, 1);
 
   // 設定各欄位的資料格式
-  for (var i = 0; i < headers.length; i++) {
-    var colName = headers[i];
+  for (var i = 0; i < columns.length; i++) {
+    var col = columns[i];
     var colIndex = i + 1;
     var columnRange = sheet.getRange(2, colIndex, formatRowCount, 1);
 
-    if (schema.textColumns && schema.textColumns.indexOf(colName) !== -1) {
-      // 純文字格式：防範統編、銀行帳號、代碼等前置 0 遺失
-      columnRange.setNumberFormat('@');
-    } else if (schema.numberColumns && schema.numberColumns.indexOf(colName) !== -1) {
-      // 數值千分位格式
-      columnRange.setNumberFormat('#,##0');
-    } else if (schema.dateColumns && schema.dateColumns.indexOf(colName) !== -1) {
-      // 標準日期格式
-      columnRange.setNumberFormat('yyyy-MM-dd');
+    switch (col.type) {
+      case 'text':
+        // 純文字格式：防範統編、銀行帳號、代碼等前置 0 遺失
+        columnRange.setNumberFormat('@');
+        break;
+      case 'number':
+        // 數值千分位格式
+        columnRange.setNumberFormat('#,##0');
+        break;
+      case 'date':
+        // 台灣標準一般日期格式
+        columnRange.setNumberFormat('yyyy/MM/dd');
+        break;
+      case 'datetime':
+        // 台灣標準日期時間格式
+        columnRange.setNumberFormat('yyyy/MM/dd HH:mm:ss');
+        break;
+      default:
+        // json, boolean 等維持一般格式
+        break;
     }
   }
 
@@ -113,13 +159,12 @@ function cleanupDefaultSheets(spreadsheet, validSheetNames) {
 }
 
 /**
- * 格式化 ISO 日期時間字串 (YYYY-MM-DDTHH:mm:ss.sssZ)
- * @param {Date} [date] 日期物件，預設為當下
- * @return {string}
+ * 取得目前時間的 JavaScript Date 物件（供直接寫入試算表日期/時間欄位）
+ * 禁止使用純 ISO 字串當正式 Sheet 日期值
+ * @return {Date}
  */
-function getCurrentIsoTimestamp(date) {
-  var d = date || new Date();
-  return d.toISOString();
+function getCurrentTimestamp() {
+  return new Date();
 }
 
 /**

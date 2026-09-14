@@ -97,6 +97,8 @@ class MockSpreadsheet {
   constructor(id, name) {
     this.id = id;
     this.name = name;
+    this.locale = 'en_US'; // 預設英文語系
+    this.timeZone = 'Etc/GMT'; // 預設時區
     this.sheets = [new MockSheet('工作表1')]; // Google Sheets 預設會有一張空白工作表
   }
 
@@ -106,6 +108,22 @@ class MockSpreadsheet {
 
   getName() {
     return this.name;
+  }
+
+  getSpreadsheetLocale() {
+    return this.locale;
+  }
+
+  setSpreadsheetLocale(locale) {
+    this.locale = locale;
+  }
+
+  getSpreadsheetTimeZone() {
+    return this.timeZone;
+  }
+
+  setSpreadsheetTimeZone(timeZone) {
+    this.timeZone = timeZone;
   }
 
   getSheets() {

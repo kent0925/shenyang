@@ -1,10 +1,15 @@
 /**
  * Schema.gs - 資料表名稱、欄位架構與列舉常數定義
  * 
- * 規則：
- * 1. Google Sheet 工作表名稱使用繁體中文。
- * 2. 程式內部常數、JSON key、interface 使用英文。
- * 3. 帳號、統編、銀行代碼、分行代碼等欄位強制使用純文字格式保存，防範前置 0 遺失。
+ * 核心規範：
+ * 1. Google Sheets 使用者可見名稱（Sheet 分頁名稱、第一列 Header）全部使用繁體中文。
+ * 2. 程式內部 key、API JSON key、變數名稱一律維持英文。
+ * 3. 提供明確的 internalKey ↔ 中文欄位名稱 mapping 與雙向轉換工具。
+ * 4. 欄位格式規範：
+ *    - 帳號、統編、銀行代碼、分行代碼等欄位強制使用純文字格式 (@)，防範前置 0 遺失。
+ *    - 金額欄位使用千分位數值格式 (#,##0)。
+ *    - 一般日期使用 yyyy/MM/dd。
+ *    - 日期時間使用 yyyy/MM/dd HH:mm:ss。
  */
 
 /**
@@ -45,262 +50,239 @@ var YEAR_SHEET_NAMES = [
 ];
 
 /**
- * 資料庫表格詳細 Schema 定義
- * 包含：欄位名稱(headers)、純文字格式欄位(textColumns)、數值格式欄位(numberColumns)、日期格式欄位(dateColumns)
+ * 完整欄位 Schema 定義
+ * 包含：英文 key、中文 label、資料型態 type
+ * type:
+ *   - 'text': 純文字格式 (@)，適用 ID、代碼、統編、帳號等
+ *   - 'number': 數值千分位格式 (#,##0)
+ *   - 'date': 台灣標準日期格式 (yyyy/MM/dd)
+ *   - 'datetime': 台灣標準日期時間格式 (yyyy/MM/dd HH:mm:ss)
+ *   - 'json': 長文字/JSON
+ *   - 'boolean': 布林值
  */
 var SCHEMAS = {
   // 1. 專案主檔
   '專案主檔': {
-    headers: [
-      'projectId',
-      'company',
-      'projectName',
-      'status',
-      'createdAt',
-      'updatedAt',
+    columns: [
+      { key: 'projectId', label: '專案編號', type: 'text' },
+      { key: 'company', label: '公司', type: 'text' },
+      { key: 'projectName', label: '專案名稱', type: 'text' },
+      { key: 'status', label: '狀態', type: 'text' },
+      { key: 'createdAt', label: '建立時間', type: 'datetime' },
+      { key: 'updatedAt', label: '更新時間', type: 'datetime' },
     ],
-    textColumns: ['projectId', 'company', 'projectName', 'status'],
-    numberColumns: [],
-    dateColumns: ['createdAt', 'updatedAt'],
   },
 
   // 2. 廠商主檔
   '廠商主檔': {
-    headers: [
-      'vendorId',
-      'vendorName',
-      'taxId',
-      'entityType',
-      'bankCode',
-      'bankName',
-      'branchCode',
-      'branchName',
-      'accountName',
-      'accountNumber',
-      'isActive',
-      'createdAt',
-      'updatedAt',
+    columns: [
+      { key: 'vendorId', label: '廠商編號', type: 'text' },
+      { key: 'vendorName', label: '廠商名稱', type: 'text' },
+      { key: 'taxId', label: '統一編號', type: 'text' },
+      { key: 'entityType', label: '登記類型', type: 'text' },
+      { key: 'bankCode', label: '金融機構代碼', type: 'text' },
+      { key: 'bankName', label: '金融機構名稱', type: 'text' },
+      { key: 'branchCode', label: '分支機構代碼', type: 'text' },
+      { key: 'branchName', label: '分支機構名稱', type: 'text' },
+      { key: 'accountName', label: '戶名', type: 'text' },
+      { key: 'accountNumber', label: '帳號', type: 'text' },
+      { key: 'isActive', label: '啟用狀態', type: 'boolean' },
+      { key: 'createdAt', label: '建立時間', type: 'datetime' },
+      { key: 'updatedAt', label: '更新時間', type: 'datetime' },
     ],
-    // accountNumber, taxId, bankCode, branchCode 必須強制使用文字格式保存，避免 007 變成 7
-    textColumns: [
-      'vendorId',
-      'vendorName',
-      'taxId',
-      'entityType',
-      'bankCode',
-      'bankName',
-      'branchCode',
-      'branchName',
-      'accountName',
-      'accountNumber',
-    ],
-    numberColumns: [],
-    dateColumns: ['createdAt', 'updatedAt'],
   },
 
   // 3. 年度設定
   '年度設定': {
-    headers: [
-      'year',
-      'spreadsheetId',
-      'status',
-      'createdAt',
-      'archivedAt',
+    columns: [
+      { key: 'year', label: '年度', type: 'text' },
+      { key: 'spreadsheetId', label: '試算表編號', type: 'text' },
+      { key: 'status', label: '狀態', type: 'text' },
+      { key: 'createdAt', label: '建立時間', type: 'datetime' },
+      { key: 'archivedAt', label: '封存時間', type: 'datetime' },
     ],
-    textColumns: ['year', 'spreadsheetId', 'status'],
-    numberColumns: [],
-    dateColumns: ['createdAt', 'archivedAt'],
   },
 
   // 4. 預算項目
   '預算項目': {
-    headers: [
-      'budgetItemId',
-      'year',
-      'projectId',
-      'company',
-      'projectName',
-      'itemName',
-      'vendorId',
-      'vendorName',
-      'budgetAmount',
-      'terminatedAmount',
-      'status',
-      'createdAt',
-      'updatedAt',
+    columns: [
+      { key: 'budgetItemId', label: '預算項目編號', type: 'text' },
+      { key: 'year', label: '年度', type: 'text' },
+      { key: 'projectId', label: '專案編號', type: 'text' },
+      { key: 'company', label: '公司', type: 'text' },
+      { key: 'projectName', label: '專案名稱', type: 'text' },
+      { key: 'itemName', label: '項目名稱', type: 'text' },
+      { key: 'vendorId', label: '廠商編號', type: 'text' },
+      { key: 'vendorName', label: '廠商名稱', type: 'text' },
+      { key: 'budgetAmount', label: '預算金額', type: 'number' },
+      { key: 'terminatedAmount', label: '終止金額', type: 'number' },
+      { key: 'status', label: '狀態', type: 'text' },
+      { key: 'createdAt', label: '建立時間', type: 'datetime' },
+      { key: 'updatedAt', label: '更新時間', type: 'datetime' },
     ],
-    textColumns: [
-      'budgetItemId',
-      'year',
-      'projectId',
-      'company',
-      'projectName',
-      'itemName',
-      'vendorId',
-      'vendorName',
-      'status',
-    ],
-    numberColumns: ['budgetAmount', 'terminatedAmount'],
-    dateColumns: ['createdAt', 'updatedAt'],
   },
 
   // 5. 表單紀錄
   '表單紀錄': {
-    headers: [
-      'formId',
-      'formType',
-      'status',
-      'createdAt',
-      'updatedAt',
-      'createdBy',
-      'company',
-      'projectId',
-      'projectName',
-      'vendorId',
-      'vendorName',
-      'vendorTaxId',
-      'budgetType',
-      'budgetItemId',
-      'amount',
-      'payloadJson',
-      'excelFileId',
-      'pdfFileId',
-      'version',
+    columns: [
+      { key: 'formId', label: '表單編號', type: 'text' },
+      { key: 'formType', label: '表單類型', type: 'text' },
+      { key: 'status', label: '狀態', type: 'text' },
+      { key: 'createdAt', label: '建立時間', type: 'datetime' },
+      { key: 'updatedAt', label: '更新時間', type: 'datetime' },
+      { key: 'createdBy', label: '建立人', type: 'text' },
+      { key: 'company', label: '公司', type: 'text' },
+      { key: 'projectId', label: '專案編號', type: 'text' },
+      { key: 'projectName', label: '專案名稱', type: 'text' },
+      { key: 'vendorId', label: '廠商編號', type: 'text' },
+      { key: 'vendorName', label: '廠商名稱', type: 'text' },
+      { key: 'vendorTaxId', label: '廠商統一編號', type: 'text' },
+      { key: 'budgetType', label: '預算類型', type: 'text' },
+      { key: 'budgetItemId', label: '預算項目編號', type: 'text' },
+      { key: 'amount', label: '金額', type: 'number' },
+      { key: 'payloadJson', label: '表單完整資料', type: 'json' },
+      { key: 'excelFileId', label: 'Excel檔案編號', type: 'text' },
+      { key: 'pdfFileId', label: 'PDF檔案編號', type: 'text' },
+      { key: 'version', label: '版本', type: 'number' },
     ],
-    textColumns: [
-      'formId',
-      'formType',
-      'status',
-      'createdBy',
-      'company',
-      'projectId',
-      'projectName',
-      'vendorId',
-      'vendorName',
-      'vendorTaxId',
-      'budgetType',
-      'budgetItemId',
-      'payloadJson',
-      'excelFileId',
-      'pdfFileId',
-    ],
-    numberColumns: ['amount', 'version'],
-    dateColumns: ['createdAt', 'updatedAt'],
   },
 
   // 6. 請款紀錄
   '請款紀錄': {
-    headers: [
-      'claimId',
-      'formId',
-      'year',
-      'claimPeriod',
-      'claimSequence',
-      'claimDate',
-      'company',
-      'projectId',
-      'projectName',
-      'vendorId',
-      'vendorName',
-      'vendorTaxId',
-      'budgetType',
-      'budgetItemId',
-      'itemName',
-      'unbudgetedReason',
-      'currentClaimAmount',
-      'retentionAmount',
-      'advanceOffsetAmount',
-      'penaltyAmount',
-      'payableAmount',
-      'status',
-      'createdAt',
-      'updatedAt',
+    columns: [
+      { key: 'claimId', label: '請款編號', type: 'text' },
+      { key: 'formId', label: '表單編號', type: 'text' },
+      { key: 'year', label: '年度', type: 'text' },
+      { key: 'claimPeriod', label: '請款期別', type: 'text' },
+      { key: 'claimSequence', label: '請款期次', type: 'number' },
+      { key: 'claimDate', label: '請款日期', type: 'date' },
+      { key: 'company', label: '公司', type: 'text' },
+      { key: 'projectId', label: '專案編號', type: 'text' },
+      { key: 'projectName', label: '專案名稱', type: 'text' },
+      { key: 'vendorId', label: '廠商編號', type: 'text' },
+      { key: 'vendorName', label: '廠商名稱', type: 'text' },
+      { key: 'vendorTaxId', label: '廠商統一編號', type: 'text' },
+      { key: 'budgetType', label: '預算類型', type: 'text' },
+      { key: 'budgetItemId', label: '預算項目編號', type: 'text' },
+      { key: 'itemName', label: '項目名稱', type: 'text' },
+      { key: 'unbudgetedReason', label: '預算外原因', type: 'text' },
+      { key: 'currentClaimAmount', label: '本期請款金額', type: 'number' },
+      { key: 'retentionAmount', label: '保留款', type: 'number' },
+      { key: 'advanceOffsetAmount', label: '預付款沖抵', type: 'number' },
+      { key: 'penaltyAmount', label: '違約金／折讓', type: 'number' },
+      { key: 'payableAmount', label: '本期應付金額', type: 'number' },
+      { key: 'status', label: '狀態', type: 'text' },
+      { key: 'createdAt', label: '建立時間', type: 'datetime' },
+      { key: 'updatedAt', label: '更新時間', type: 'datetime' },
     ],
-    textColumns: [
-      'claimId',
-      'formId',
-      'year',
-      'claimPeriod',
-      'company',
-      'projectId',
-      'projectName',
-      'vendorId',
-      'vendorName',
-      'vendorTaxId',
-      'budgetType',
-      'budgetItemId',
-      'itemName',
-      'unbudgetedReason',
-      'status',
-    ],
-    numberColumns: [
-      'claimSequence',
-      'currentClaimAmount',
-      'retentionAmount',
-      'advanceOffsetAmount',
-      'penaltyAmount',
-      'payableAmount',
-    ],
-    dateColumns: ['claimDate', 'createdAt', 'updatedAt'],
   },
 
   // 7. 付款紀錄
   '付款紀錄': {
-    headers: [
-      'paymentId',
-      'claimId',
-      'formId',
-      'budgetType',
-      'budgetItemId',
-      'company',
-      'projectId',
-      'projectName',
-      'vendorId',
-      'vendorName',
-      'itemName',
-      'amount',
-      'status',
-      'paymentDate',
-      'year',
-      'month',
-      'createdAt',
-      'updatedAt',
+    columns: [
+      { key: 'paymentId', label: '付款編號', type: 'text' },
+      { key: 'claimId', label: '請款編號', type: 'text' },
+      { key: 'formId', label: '表單編號', type: 'text' },
+      { key: 'budgetType', label: '預算類型', type: 'text' },
+      { key: 'budgetItemId', label: '預算項目編號', type: 'text' },
+      { key: 'company', label: '公司', type: 'text' },
+      { key: 'projectId', label: '專案編號', type: 'text' },
+      { key: 'projectName', label: '專案名稱', type: 'text' },
+      { key: 'vendorId', label: '廠商編號', type: 'text' },
+      { key: 'vendorName', label: '廠商名稱', type: 'text' },
+      { key: 'itemName', label: '項目名稱', type: 'text' },
+      { key: 'amount', label: '付款金額', type: 'number' },
+      { key: 'status', label: '付款狀態', type: 'text' },
+      { key: 'paymentDate', label: '付款日期', type: 'date' },
+      { key: 'year', label: '年度', type: 'text' },
+      { key: 'month', label: '月份', type: 'number' },
+      { key: 'createdAt', label: '建立時間', type: 'datetime' },
+      { key: 'updatedAt', label: '更新時間', type: 'datetime' },
     ],
-    textColumns: [
-      'paymentId',
-      'claimId',
-      'formId',
-      'budgetType',
-      'budgetItemId',
-      'company',
-      'projectId',
-      'projectName',
-      'vendorId',
-      'vendorName',
-      'itemName',
-      'status',
-      'year',
-    ],
-    numberColumns: ['amount', 'month'],
-    dateColumns: ['paymentDate', 'createdAt', 'updatedAt'],
   },
 
   // 8. 異動紀錄
   '異動紀錄': {
-    headers: [
-      'logId',
-      'timestamp',
-      'user',
-      'action',
-      'entityType',
-      'entityId',
-      'detailJson',
+    columns: [
+      { key: 'logId', label: '紀錄編號', type: 'text' },
+      { key: 'timestamp', label: '時間', type: 'datetime' },
+      { key: 'user', label: '使用者', type: 'text' },
+      { key: 'action', label: '動作', type: 'text' },
+      { key: 'entityType', label: '資料類型', type: 'text' },
+      { key: 'entityId', label: '資料編號', type: 'text' },
+      { key: 'detailJson', label: '異動內容', type: 'json' },
     ],
-    textColumns: ['logId', 'user', 'action', 'entityType', 'entityId', 'detailJson'],
-    numberColumns: [],
-    dateColumns: ['timestamp'],
   },
 };
+
+/**
+ * 取得特定工作表的中文 Header 陣列（供 Google Sheet 顯示）
+ * @param {string} sheetName 中文工作表名稱
+ * @return {Array<string>}
+ */
+function getSheetHeaders(sheetName) {
+  var schema = SCHEMAS[sheetName];
+  if (!schema || !schema.columns) {
+    throw new Error('未定義的 Sheet Schema: ' + sheetName);
+  }
+  return schema.columns.map(function (col) {
+    return col.label;
+  });
+}
+
+/**
+ * 取得特定工作表的英文 Key 陣列（供程式內部使用）
+ * @param {string} sheetName 中文工作表名稱
+ * @return {Array<string>}
+ */
+function getSheetKeys(sheetName) {
+  var schema = SCHEMAS[sheetName];
+  if (!schema || !schema.columns) {
+    throw new Error('未定義的 Sheet Schema: ' + sheetName);
+  }
+  return schema.columns.map(function (col) {
+    return col.key;
+  });
+}
+
+/**
+ * 將試算表列資料（依照中文 Header 順序）轉為內部英文 Key 的 JavaScript 物件
+ * @param {string} sheetName 中文工作表名稱
+ * @param {Array<any>} rowValues 試算表一列資料
+ * @return {Object} 英文 key 物件
+ */
+function rowToObject(sheetName, rowValues) {
+  var schema = SCHEMAS[sheetName];
+  if (!schema || !schema.columns) {
+    throw new Error('未定義的 Sheet Schema: ' + sheetName);
+  }
+  var obj = {};
+  schema.columns.forEach(function (col, idx) {
+    obj[col.key] = (rowValues && rowValues[idx] !== undefined) ? rowValues[idx] : null;
+  });
+  return obj;
+}
+
+/**
+ * 將內部英文 Key 的 JavaScript 物件轉為試算表儲存的一列陣列值（依欄位定義順序）
+ * @param {string} sheetName 中文工作表名稱
+ * @param {Object} obj 英文 key 物件
+ * @return {Array<any>}
+ */
+function objectToRow(sheetName, obj) {
+  var schema = SCHEMAS[sheetName];
+  if (!schema || !schema.columns) {
+    throw new Error('未定義的 Sheet Schema: ' + sheetName);
+  }
+  return schema.columns.map(function (col) {
+    var val = (obj && obj[col.key] !== undefined) ? obj[col.key] : '';
+    // 若為文字型別且值非空，確保轉為字串
+    if (col.type === 'text' && val !== null && val !== undefined) {
+      return String(val);
+    }
+    return val;
+  });
+}
 
 /**
  * 系統狀態與列舉值

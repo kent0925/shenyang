@@ -2,10 +2,11 @@
  * YearService.gs - 年度資料庫管理服務
  * 
  * 核心功能：
- * 1. createYearDatabase(year)：動態建立特定年度資料庫（如「2026公司表單資料庫」、「2027公司表單資料庫」）
+ * 1. createYearDatabase(year)：動態建立特定年度資料庫（如「2026公司表單資料庫」）
  * 2. 包含工作表：預算項目、表單紀錄、請款紀錄、付款紀錄、異動紀錄
- * 3. 動態登記於主檔「年度設定」工作表，GAS 透過「年度設定」尋找年度 Spreadsheet，嚴禁寫死年度 ID。
- * 4. 保證冪等性（Idempotent），重複呼叫不會產生重複資料庫或重複工作表。
+ * 3. 使用者可見標頭全面中文，內部 key 維持英文，設定 Locale=zh_TW, TimeZone=Asia/Taipei
+ * 4. 若已存在舊版資料庫，平滑升級英文 Header 為中文 Header，絕不刪除或覆蓋既有資料
+ * 5. 動態登記於主檔「年度設定」，禁止寫死年度 ID
  */
 
 /**
@@ -66,7 +67,9 @@ function getYearDatabase(year) {
   }
 
   try {
-    return SpreadsheetApp.openById(record.spreadsheetId);
+    var ss = SpreadsheetApp.openById(record.spreadsheetId);
+    applySpreadsheetSettings(ss);
+    return ss;
   } catch (e) {
     Logger.log('無法開啟年度 ' + year + ' 之 Spreadsheet (' + record.spreadsheetId + '): ' + e.message);
     return null;
@@ -76,6 +79,7 @@ function getYearDatabase(year) {
 /**
  * 建立或取得指定年度資料庫（保證冪等性）
  * 包含：預算項目、表單紀錄、請款紀錄、付款紀錄、異動紀錄
+ * 若已存在舊版資料庫，會自動套用 Locale=zh_TW 並將英文 Header 平滑升級為中文 Header
  * @param {number|string} year 西元年度（例如 2026 或 2027）
  * @return {GoogleAppsScript.Spreadsheet.Spreadsheet}
  */
@@ -111,30 +115,31 @@ function createYearDatabase(year) {
     var dbName = getYearDatabaseName(targetYear);
     yearSs = getOrCreateSpreadsheetInFolder(rootFolderId, dbName);
 
-    // 登記或更新至主檔「年度設定」工作表
+    // 登記或更新至主檔「年度設定」工作表（寫入原生 Date）
     var configSheet = masterSs.getSheetByName(SHEETS.YEAR_CONFIG);
     if (existingRecord) {
-      // 更新既有列的 spreadsheetId
       configSheet.getRange(existingRecord.rowIndex, 2).setValue(yearSs.getId());
       configSheet.getRange(existingRecord.rowIndex, 3).setValue(STATUS.YEAR.ACTIVE);
     } else {
-      // 新增一列年度紀錄
       configSheet.appendRow([
         String(targetYear),
         yearSs.getId(),
         STATUS.YEAR.ACTIVE,
-        getCurrentIsoTimestamp(),
+        getCurrentTimestamp(),
         '',
       ]);
     }
   }
 
-  // 3. 確保年度資料庫五大工作表完整存在並套用格式
+  // 3. 設定語系與時區 (zh_TW, Asia/Taipei)
+  applySpreadsheetSettings(yearSs);
+
+  // 4. 確保年度資料庫五大工作表完整存在，並平滑升級為中文 Header 與正確格式
   YEAR_SHEET_NAMES.forEach(function (sheetName) {
     getOrCreateSheet(yearSs, sheetName, SCHEMAS[sheetName]);
   });
 
-  // 4. 清除新建試算表預設之空白工作表
+  // 5. 清除新建試算表預設之空白工作表
   cleanupDefaultSheets(yearSs, YEAR_SHEET_NAMES);
 
   Logger.log('年度資料庫 [' + getYearDatabaseName(targetYear) + '] 準備就緒，ID: ' + yearSs.getId());

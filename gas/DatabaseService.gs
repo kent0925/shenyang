@@ -4,7 +4,8 @@
  * 核心原則：
  * 1. 冪等性（Idempotent）：重複執行不得產生重複 Spreadsheet（如「... (1)」）或重複 Sheet。
  * 2. 嚴禁寫死 Drive ID 或 Spreadsheet ID，由 Script Properties 與「年度設定」動態取得。
- * 3. 工作表名稱使用中文，欄位格式依 Schema 設定。
+ * 3. 工作表名稱與 Header 使用繁體中文，內部 key 維持英文。
+ * 4. 設定試算表 Locale = zh_TW, TimeZone = Asia/Taipei。
  */
 
 /**
@@ -35,7 +36,9 @@ function getOrCreateSpreadsheetInFolder(folderId, fileName) {
   var existingFile = findFileInFolder(folder, fileName);
 
   if (existingFile) {
-    return SpreadsheetApp.open(existingFile);
+    var existingSs = SpreadsheetApp.open(existingFile);
+    applySpreadsheetSettings(existingSs);
+    return existingSs;
   }
 
   // 檔案不存在時才建立
@@ -50,12 +53,14 @@ function getOrCreateSpreadsheetInFolder(folderId, fileName) {
     DriveApp.getRootFolder().removeFile(file);
   }
 
+  applySpreadsheetSettings(newSs);
   return newSs;
 }
 
 /**
  * 取得或建立「公司表單系統主檔資料庫」
  * 包含：專案主檔、廠商主檔、年度設定
+ * 若已存在，會自動檢查並平滑升級 Header 為中文 Header，並設定 zh_TW 地區。
  * @return {GoogleAppsScript.Spreadsheet.Spreadsheet}
  */
 function getMasterDatabase() {
@@ -81,12 +86,15 @@ function getMasterDatabase() {
     setProperty(PROPERTY_KEYS.MASTER_SPREADSHEET_ID, masterSs.getId());
   }
 
-  // 3. 確保主檔工作表結構完整（專案主檔、廠商主檔、年度設定）
+  // 3. 套用試算表語系與時區 (zh_TW, Asia/Taipei)
+  applySpreadsheetSettings(masterSs);
+
+  // 4. 確保主檔工作表結構完整（專案主檔、廠商主檔、年度設定），並自動升級中文 Header
   MASTER_SHEET_NAMES.forEach(function (sheetName) {
     getOrCreateSheet(masterSs, sheetName, SCHEMAS[sheetName]);
   });
 
-  // 4. 清理預設空白工作表
+  // 5. 清理預設空白工作表
   cleanupDefaultSheets(masterSs, MASTER_SHEET_NAMES);
 
   return masterSs;

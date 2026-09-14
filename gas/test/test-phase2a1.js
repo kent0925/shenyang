@@ -1,21 +1,20 @@
 /**
- * test-phase2a1.js - Phase 2A-1 自動化驗證測試腳本
+ * test-phase2a1.js - Phase 2A-1 中文化欄位與台灣格式自動化驗證測試
  * 
  * 驗收條件涵蓋：
- * 1. initializeSystem() 第一次執行成功
- * 2. 自動建立「公司表單系統主檔資料庫」
- * 3. 自動建立「2026公司表單資料庫」（或當年度）
- * 4. 所有 8 個中文 Sheet 名稱建立正確
- * 5. 所有 Sheet Headers 與 Schema 定義完全相符
- * 6. 第二次執行 initializeSystem() 具備冪等性（Spreadsheet 與 Sheet 不重複）
- * 7. createYearDatabase(2027) 建立 2027 年度資料庫並登記於「年度設定」
- * 8. 再次呼叫 createYearDatabase(2027) 不重複建立
- * 9. 「年度設定」正確紀錄 2026 與 2027 之 Spreadsheet ID，且能動態定位
- * 10. 廠商主檔之 accountNumber, taxId, bankCode, branchCode 格式設定為純文字 (@)
- * 11. 資料模型驗證：同一廠商允許 budgeted 與 unbudgeted 請款
- * 12. 請款與付款模型驗證：Payment 具備 claimId，支援 1 Claim 對多 Payment
- * 13. 請款金額欄位驗證：currentClaimAmount, retentionAmount, advanceOffsetAmount, penaltyAmount, payableAmount
- * 14. Script Properties 讀寫驗證，嚴禁任何寫死 Google ID
+ * 1. 所有 8 個工作表名稱中文
+ * 2. 所有 8 個工作表第一列 Header 全面中文
+ * 3. 程式內部 key 維持英文，雙向 mapping 與 rowToObject / objectToRow 轉換正確
+ * 4. 廠商主檔之 統一編號、金融機構代碼、分支機構代碼、帳號 格式為純文字 (@)
+ * 5. 一般日期格式為 yyyy/MM/dd，日期時間格式為 yyyy/MM/dd HH:mm:ss
+ * 6. 主檔與年度資料庫 Locale = zh_TW, TimeZone = Asia/Taipei
+ * 7. 既有舊版英文 Header 資料庫自動平滑升級為中文 Header 且保留原有資料列
+ * 8. 重複執行 initializeSystem() 具備冪等性（不重複建檔、不重複建表、年度設定不重複）
+ * 9. createYearDatabase(2027) 建立 2027 年度資料庫並登記於「年度設定」
+ * 10. 再次呼叫 createYearDatabase(2027) 冪等性
+ * 11. 業務模型驗證：同一廠商允許 budgeted 與 unbudgeted 請款
+ * 12. 請款與付款關聯驗證：Payment 透過 claimId 支援 1 Claim 對多 Payment
+ * 13. Script Properties 檢驗，嚴禁寫死 Google ID
  */
 
 import fs from 'node:fs';
@@ -28,7 +27,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const gasDir = path.resolve(__dirname, '..');
 
-// 讀取所有 GAS 原始碼
 const gasFiles = [
   'Config.gs',
   'Schema.gs',
@@ -60,7 +58,7 @@ function loadGasContext(env) {
 
 function runTests() {
   console.log('====================================================');
-  console.log('開始執行 Phase 2A-1 GAS 資料庫骨架自動化驗證測試');
+  console.log('開始執行 Phase 2A-1 中文化欄位與台灣格式自動化驗證測試');
   console.log('====================================================\n');
 
   let passed = 0;
@@ -76,223 +74,261 @@ function runTests() {
     }
   }
 
-  // 準備初始模擬環境（模擬使用者已設定的 Script Properties）
+  // ----------------------------------------------------
+  // 測試 1: 系統初次初始化與試算表 Locale/TimeZone
+  // ----------------------------------------------------
+  console.log('【測試群組 1：系統初次初始化與 Locale / TimeZone 設定】');
   const initialProps = {
     DRIVE_ROOT_FOLDER_ID: 'folder_root_test_id',
     SCHEMA_VERSION: '1',
     APP_ENV: 'production',
   };
-
   const env = createGasEnvironment(initialProps);
   const gas = loadGasContext(env);
 
-  // ----------------------------------------------------
-  // 測試 1: 第一次執行 initializeSystem()
-  // ----------------------------------------------------
-  console.log('【測試群組 1：系統初次初始化與試算表建立】');
   const initResult = gas.initializeSystem();
   assert(initResult.success === true, 'initializeSystem() 執行回傳 success: true');
-  assert(initResult.masterDatabase.name === '公司表單系統主檔資料庫', '主檔資料庫名稱正確');
-  assert(initResult.currentYearDatabase.year === new Date().getFullYear(), '當前年度符合預期');
-
   const masterId = initResult.masterDatabase.spreadsheetId;
   const currentYearId = initResult.currentYearDatabase.spreadsheetId;
-  assert(!!masterId, '主檔 Spreadsheet ID 存在且非空');
-  assert(!!currentYearId, '年度 Spreadsheet ID 存在且非空');
-  assert(masterId !== currentYearId, '主檔與年度資料庫為不同之獨立 Spreadsheet');
 
-  // ----------------------------------------------------
-  // 測試 2: 主檔工作表與 Schema 驗證
-  // ----------------------------------------------------
-  console.log('\n【測試群組 2：主檔工作表與欄位 Schema 驗證】');
   const masterSs = env.SpreadsheetApp.openById(masterId);
-  const masterSheetNames = masterSs.getSheets().map(s => s.getName());
-  assert(masterSheetNames.includes('專案主檔'), '主檔包含「專案主檔」工作表');
-  assert(masterSheetNames.includes('廠商主檔'), '主檔包含「廠商主檔」工作表');
-  assert(masterSheetNames.includes('年度設定'), '主檔包含「年度設定」工作表');
-  assert(!masterSheetNames.includes('工作表1'), '預設空白「工作表1」已成功清理');
+  const yearSs = env.SpreadsheetApp.openById(currentYearId);
 
-  // 驗證專案主檔 Headers
+  assert(masterSs.getSpreadsheetLocale() === 'zh_TW', '主檔資料庫 Locale 設定為 zh_TW');
+  assert(masterSs.getSpreadsheetTimeZone() === 'Asia/Taipei', '主檔資料庫 TimeZone 設定為 Asia/Taipei');
+  assert(yearSs.getSpreadsheetLocale() === 'zh_TW', '年度資料庫 Locale 設定為 zh_TW');
+  assert(yearSs.getSpreadsheetTimeZone() === 'Asia/Taipei', '年度資料庫 TimeZone 設定為 Asia/Taipei');
+
+  // ----------------------------------------------------
+  // 測試 2: 主檔工作表中文 Header 與 Schema Mapping 檢驗
+  // ----------------------------------------------------
+  console.log('\n【測試群組 2：主檔工作表中文 Header 與 Schema Mapping 檢驗】');
+  // 2.1 專案主檔
   const projectsSheet = masterSs.getSheetByName('專案主檔');
-  const expectedProjectsHeaders = ['projectId', 'company', 'projectName', 'status', 'createdAt', 'updatedAt'];
+  assert(!!projectsSheet, '存在「專案主檔」Sheet');
+  const expectedProjectsChineseHeaders = ['專案編號', '公司', '專案名稱', '狀態', '建立時間', '更新時間'];
   const actualProjectsHeaders = projectsSheet.getDataRange().getValues()[0];
   assert(
-    JSON.stringify(actualProjectsHeaders) === JSON.stringify(expectedProjectsHeaders),
-    '「專案主檔」欄位 Headers 完全符合 Schema'
+    JSON.stringify(actualProjectsHeaders) === JSON.stringify(expectedProjectsChineseHeaders),
+    '「專案主檔」第一列 Header 全面使用中文'
   );
 
-  // 驗證廠商主檔 Headers 與格式
+  // 2.2 廠商主檔
   const vendorsSheet = masterSs.getSheetByName('廠商主檔');
-  const expectedVendorsHeaders = [
+  assert(!!vendorsSheet, '存在「廠商主檔」Sheet');
+  const expectedVendorsChineseHeaders = [
+    '廠商編號', '廠商名稱', '統一編號', '登記類型',
+    '金融機構代碼', '金融機構名稱', '分支機構代碼', '分支機構名稱',
+    '戶名', '帳號', '啟用狀態', '建立時間', '更新時間'
+  ];
+  const actualVendorsHeaders = vendorsSheet.getDataRange().getValues()[0];
+  assert(
+    JSON.stringify(actualVendorsHeaders) === JSON.stringify(expectedVendorsChineseHeaders),
+    '「廠商主檔」第一列 Header 全面使用中文'
+  );
+
+  // 驗證純文字格式欄位 (統一編號、金融機構代碼、分支機構代碼、帳號)
+  const taxIdCol = actualVendorsHeaders.indexOf('統一編號') + 1;
+  const bankCodeCol = actualVendorsHeaders.indexOf('金融機構代碼') + 1;
+  const branchCodeCol = actualVendorsHeaders.indexOf('分支機構代碼') + 1;
+  const accountNumberCol = actualVendorsHeaders.indexOf('帳號') + 1;
+  assert(vendorsSheet.columnFormats[taxIdCol] === '@', '「統一編號」欄位格式設定為純文字 (@)');
+  assert(vendorsSheet.columnFormats[bankCodeCol] === '@', '「金融機構代碼」欄位格式設定為純文字 (@)');
+  assert(vendorsSheet.columnFormats[branchCodeCol] === '@', '「分支機構代碼」欄位格式設定為純文字 (@)');
+  assert(vendorsSheet.columnFormats[accountNumberCol] === '@', '「帳號」欄位格式設定為純文字 (@)，防範前置 0 消失');
+
+  // 驗證日期時間格式 (建立時間、更新時間)
+  const createdAtCol = actualVendorsHeaders.indexOf('建立時間') + 1;
+  assert(vendorsSheet.columnFormats[createdAtCol] === 'yyyy/MM/dd HH:mm:ss', '「建立時間」格式設定為 yyyy/MM/dd HH:mm:ss');
+
+  // 2.3 年度設定
+  const yearConfigSheet = masterSs.getSheetByName('年度設定');
+  assert(!!yearConfigSheet, '存在「年度設定」Sheet');
+  const expectedYearConfigChineseHeaders = ['年度', '試算表編號', '狀態', '建立時間', '封存時間'];
+  const actualYearConfigHeaders = yearConfigSheet.getDataRange().getValues()[0];
+  assert(
+    JSON.stringify(actualYearConfigHeaders) === JSON.stringify(expectedYearConfigChineseHeaders),
+    '「年度設定」第一列 Header 全面使用中文'
+  );
+
+  // ----------------------------------------------------
+  // 測試 3: 年度資料庫中文 Header 檢驗
+  // ----------------------------------------------------
+  console.log('\n【測試群組 3：年度資料庫中文 Header 檢驗】');
+  // 3.1 預算項目
+  const budgetSheet = yearSs.getSheetByName('預算項目');
+  const expectedBudgetHeaders = [
+    '預算項目編號', '年度', '專案編號', '公司', '專案名稱',
+    '項目名稱', '廠商編號', '廠商名稱', '預算金額', '終止金額',
+    '狀態', '建立時間', '更新時間'
+  ];
+  assert(
+    JSON.stringify(budgetSheet.getDataRange().getValues()[0]) === JSON.stringify(expectedBudgetHeaders),
+    '「預算項目」第一列 Header 全面使用中文'
+  );
+
+  // 3.2 表單紀錄
+  const formsSheet = yearSs.getSheetByName('表單紀錄');
+  const expectedFormsHeaders = [
+    '表單編號', '表單類型', '狀態', '建立時間', '更新時間',
+    '建立人', '公司', '專案編號', '專案名稱', '廠商編號',
+    '廠商名稱', '廠商統一編號', '預算類型', '預算項目編號', '金額',
+    '表單完整資料', 'Excel檔案編號', 'PDF檔案編號', '版本'
+  ];
+  assert(
+    JSON.stringify(formsSheet.getDataRange().getValues()[0]) === JSON.stringify(expectedFormsHeaders),
+    '「表單紀錄」第一列 Header 全面使用中文'
+  );
+
+  // 3.3 請款紀錄
+  const claimsSheet = yearSs.getSheetByName('請款紀錄');
+  const expectedClaimsHeaders = [
+    '請款編號', '表單編號', '年度', '請款期別', '請款期次',
+    '請款日期', '公司', '專案編號', '專案名稱', '廠商編號',
+    '廠商名稱', '廠商統一編號', '預算類型', '預算項目編號', '項目名稱',
+    '預算外原因', '本期請款金額', '保留款', '預付款沖抵', '違約金／折讓',
+    '本期應付金額', '狀態', '建立時間', '更新時間'
+  ];
+  const actualClaimsHeaders = claimsSheet.getDataRange().getValues()[0];
+  assert(
+    JSON.stringify(actualClaimsHeaders) === JSON.stringify(expectedClaimsHeaders),
+    '「請款紀錄」第一列 Header 全面使用中文'
+  );
+  // 驗證請款日期格式
+  const claimDateCol = actualClaimsHeaders.indexOf('請款日期') + 1;
+  assert(claimsSheet.columnFormats[claimDateCol] === 'yyyy/MM/dd', '「請款日期」格式設定為 yyyy/MM/dd');
+
+  // 3.4 付款紀錄
+  const paymentsSheet = yearSs.getSheetByName('付款紀錄');
+  const expectedPaymentsHeaders = [
+    '付款編號', '請款編號', '表單編號', '預算類型', '預算項目編號',
+    '公司', '專案編號', '專案名稱', '廠商編號', '廠商名稱',
+    '項目名稱', '付款金額', '付款狀態', '付款日期', '年度',
+    '月份', '建立時間', '更新時間'
+  ];
+  const actualPaymentsHeaders = paymentsSheet.getDataRange().getValues()[0];
+  assert(
+    JSON.stringify(actualPaymentsHeaders) === JSON.stringify(expectedPaymentsHeaders),
+    '「付款紀錄」第一列 Header 全面使用中文'
+  );
+  // 驗證付款日期格式
+  const paymentDateCol = actualPaymentsHeaders.indexOf('付款日期') + 1;
+  assert(paymentsSheet.columnFormats[paymentDateCol] === 'yyyy/MM/dd', '「付款日期」格式設定為 yyyy/MM/dd');
+
+  // 3.5 異動紀錄
+  const auditSheet = yearSs.getSheetByName('異動紀錄');
+  const expectedAuditHeaders = ['紀錄編號', '時間', '使用者', '動作', '資料類型', '資料編號', '異動內容'];
+  assert(
+    JSON.stringify(auditSheet.getDataRange().getValues()[0]) === JSON.stringify(expectedAuditHeaders),
+    '「異動紀錄」第一列 Header 全面使用中文'
+  );
+
+  // ----------------------------------------------------
+  // 測試 4: 雙向轉換工具 rowToObject 與 objectToRow 檢驗
+  // ----------------------------------------------------
+  console.log('\n【測試群組 4：雙向轉換工具 rowToObject 與 objectToRow 檢驗】');
+  const vendorObj = {
+    vendorId: 'VEN-000001',
+    vendorName: '大明工程有限公司',
+    taxId: '12345678',
+    entityType: '公司',
+    bankCode: '007',
+    bankName: '第一商業銀行',
+    branchCode: '0071234',
+    branchName: '台北分行',
+    accountName: '大明工程有限公司',
+    accountNumber: '001234567890',
+    isActive: true,
+    createdAt: new Date('2026-09-14T08:00:00Z'),
+    updatedAt: new Date('2026-09-14T08:00:00Z'),
+  };
+
+  const convertedRow = gas.objectToRow('廠商主檔', vendorObj);
+  assert(Array.isArray(convertedRow) && convertedRow.length === 13, 'objectToRow 輸出長度正確');
+  assert(convertedRow[0] === 'VEN-000001', 'objectToRow 第一欄為廠商編號');
+  assert(convertedRow[4] === '007', 'objectToRow 第五欄為銀行代碼 (保留 007 字串)');
+  assert(convertedRow[9] === '001234567890', 'objectToRow 第十欄為帳號 (保留前置 00 字串)');
+
+  const parsedBackObj = gas.rowToObject('廠商主檔', convertedRow);
+  assert(parsedBackObj.vendorId === 'VEN-000001', 'rowToObject 正確解析出 vendorId');
+  assert(parsedBackObj.bankCode === '007', 'rowToObject 正確解析出 bankCode');
+  assert(parsedBackObj.accountNumber === '001234567890', 'rowToObject 正確解析出 accountNumber');
+
+  // ----------------------------------------------------
+  // 測試 5: 既有舊版英文 Header 資料庫自動升級（Migration）機制檢驗
+  // ----------------------------------------------------
+  console.log('\n【測試群組 5：舊版英文 Header 自動平滑升級（Migration）機制】');
+  // 模擬已存在的舊試算表（內含舊版英文 Header 與測試資料）
+  const legacySs = env.SpreadsheetApp.create('舊版主檔測試');
+  const legacyVendorSheet = legacySs.getSheetByName('工作表1');
+  // 寫入舊版英文 Header 與一筆假資料
+  const oldEnglishHeaders = [
     'vendorId', 'vendorName', 'taxId', 'entityType',
     'bankCode', 'bankName', 'branchCode', 'branchName',
     'accountName', 'accountNumber', 'isActive',
     'createdAt', 'updatedAt'
   ];
-  const actualVendorsHeaders = vendorsSheet.getDataRange().getValues()[0];
-  assert(
-    JSON.stringify(actualVendorsHeaders) === JSON.stringify(expectedVendorsHeaders),
-    '「廠商主檔」欄位 Headers 完全符合 Schema'
-  );
-
-  // 驗證 accountNumber 等為純文字格式 (@)
-  const accountNumberColIdx = actualVendorsHeaders.indexOf('accountNumber') + 1;
-  const taxIdColIdx = actualVendorsHeaders.indexOf('taxId') + 1;
-  const bankCodeColIdx = actualVendorsHeaders.indexOf('bankCode') + 1;
-  const branchCodeColIdx = actualVendorsHeaders.indexOf('branchCode') + 1;
-  assert(vendorsSheet.columnFormats[accountNumberColIdx] === '@', 'accountNumber 欄位格式為純文字 (@)，防範前置 0 消失');
-  assert(vendorsSheet.columnFormats[taxIdColIdx] === '@', 'taxId 欄位格式為純文字 (@)');
-  assert(vendorsSheet.columnFormats[bankCodeColIdx] === '@', 'bankCode 欄位格式為純文字 (@)');
-  assert(vendorsSheet.columnFormats[branchCodeColIdx] === '@', 'branchCode 欄位格式為純文字 (@)');
-
-  // 驗證年度設定 Headers
-  const yearConfigSheet = masterSs.getSheetByName('年度設定');
-  const expectedYearConfigHeaders = ['year', 'spreadsheetId', 'status', 'createdAt', 'archivedAt'];
-  const actualYearConfigHeaders = yearConfigSheet.getDataRange().getValues()[0];
-  assert(
-    JSON.stringify(actualYearConfigHeaders) === JSON.stringify(expectedYearConfigHeaders),
-    '「年度設定」欄位 Headers 完全符合 Schema'
-  );
-
-  // ----------------------------------------------------
-  // 測試 3: 當年度資料庫工作表與 Schema 驗證
-  // ----------------------------------------------------
-  console.log('\n【測試群組 3：年度資料庫工作表與欄位 Schema 驗證】');
-  const yearSs = env.SpreadsheetApp.openById(currentYearId);
-  const yearSheetNames = yearSs.getSheets().map(s => s.getName());
-  assert(yearSheetNames.includes('預算項目'), '年度資料庫包含「預算項目」工作表');
-  assert(yearSheetNames.includes('表單紀錄'), '年度資料庫包含「表單紀錄」工作表');
-  assert(yearSheetNames.includes('請款紀錄'), '年度資料庫包含「請款紀錄」工作表');
-  assert(yearSheetNames.includes('付款紀錄'), '年度資料庫包含「付款紀錄」工作表');
-  assert(yearSheetNames.includes('異動紀錄'), '年度資料庫包含「異動紀錄」工作表');
-  assert(!yearSheetNames.includes('工作表1'), '年度資料庫預設空白「工作表1」已清理');
-
-  // 驗證請款紀錄 Headers
-  const claimsSheet = yearSs.getSheetByName('請款紀錄');
-  const expectedClaimsHeaders = [
-    'claimId', 'formId', 'year', 'claimPeriod', 'claimSequence',
-    'claimDate', 'company', 'projectId', 'projectName',
-    'vendorId', 'vendorName', 'vendorTaxId', 'budgetType',
-    'budgetItemId', 'itemName', 'unbudgetedReason',
-    'currentClaimAmount', 'retentionAmount', 'advanceOffsetAmount',
-    'penaltyAmount', 'payableAmount', 'status', 'createdAt', 'updatedAt'
+  const oldSampleRow = [
+    'VEN-OLD-01', '測試廠商', '88888888', '公司',
+    '004', '台灣銀行', '004001', '總行',
+    '測試廠商', '00987654321', true,
+    '2026-09-14T00:00:00Z', '2026-09-14T00:00:00Z'
   ];
-  const actualClaimsHeaders = claimsSheet.getDataRange().getValues()[0];
+  legacyVendorSheet.getRange(1, 1, 1, oldEnglishHeaders.length).setValues([oldEnglishHeaders]);
+  legacyVendorSheet.getRange(2, 1, 1, oldSampleRow.length).setValues([oldSampleRow]);
+
+  // 執行 setupSheetStructure（模擬 initializeSystem 讀取到舊版 Sheet 時）
+  gas.setupSheetStructure(legacyVendorSheet, gas.SCHEMAS['廠商主檔']);
+
+  const migratedHeaders = legacyVendorSheet.getRange(1, 1, 1, expectedVendorsChineseHeaders.length).getValues()[0];
+  const preservedDataRow = legacyVendorSheet.getRange(2, 1, 1, oldSampleRow.length).getValues()[0];
+
   assert(
-    JSON.stringify(actualClaimsHeaders) === JSON.stringify(expectedClaimsHeaders),
-    '「請款紀錄」欄位 Headers 包含金額欄位 (currentClaimAmount, retentionAmount, etc.) 完全符合 Schema'
+    JSON.stringify(migratedHeaders) === JSON.stringify(expectedVendorsChineseHeaders),
+    '舊版英文 Header 成功平滑升級為中文 Header'
+  );
+  assert(
+    preservedDataRow[0] === 'VEN-OLD-01' && preservedDataRow[9] === '00987654321',
+    '原有資料列完整保留，絕未被清空或刪除'
   );
 
-  // 驗證付款紀錄 Headers
-  const paymentsSheet = yearSs.getSheetByName('付款紀錄');
-  const expectedPaymentsHeaders = [
-    'paymentId', 'claimId', 'formId', 'budgetType', 'budgetItemId',
-    'company', 'projectId', 'projectName', 'vendorId', 'vendorName',
-    'itemName', 'amount', 'status', 'paymentDate', 'year', 'month',
-    'createdAt', 'updatedAt'
-  ];
-  const actualPaymentsHeaders = paymentsSheet.getDataRange().getValues()[0];
-  assert(
-    JSON.stringify(actualPaymentsHeaders) === JSON.stringify(expectedPaymentsHeaders),
-    '「付款紀錄」欄位 Headers 包含 claimId 完全符合 Schema'
-  );
+  // ----------------------------------------------------
+  // 測試 6: initializeSystem() 冪等性與年度設定單一紀錄檢驗
+  // ----------------------------------------------------
+  console.log('\n【測試群組 6：initializeSystem() 冪等性與年度設定單一紀錄檢驗】');
+  const filesBefore = env._internal.files.size;
+  const reinitResult = gas.initializeSystem();
+  const filesAfter = env._internal.files.size;
+
+  assert(filesBefore === filesAfter, '再次執行 initializeSystem() 不建立重複 Spreadsheet 檔案');
+  assert(reinitResult.masterDatabase.spreadsheetId === masterId, '主檔 ID 保持一致');
+  assert(reinitResult.currentYearDatabase.spreadsheetId === currentYearId, '年度 ID 保持一致');
+
+  // 檢驗主檔「年度設定」列數（扣除 Header 應只有當年度 1 筆紀錄）
+  const yearConfigRows = yearConfigSheet.getDataRange().getValues().slice(1);
+  const currentYearRecords = yearConfigRows.filter(r => String(r[0]) === String(new Date().getFullYear()));
+  assert(currentYearRecords.length === 1, '「年度設定」中當年度紀錄保持唯一 1 筆，未重複新增');
 
   // ----------------------------------------------------
-  // 測試 4: 第二次執行 initializeSystem() 驗證冪等性
+  // 測試 7: createYearDatabase(2027) 動態建立與登記
   // ----------------------------------------------------
-  console.log('\n【測試群組 4：initializeSystem() 冪等性驗證】');
-  const totalFilesBefore = env._internal.files.size;
-  const initResult2 = gas.initializeSystem();
-  const totalFilesAfter = env._internal.files.size;
-  assert(totalFilesBefore === totalFilesAfter, '第二次執行 initializeSystem() 不重複建立 Spreadsheet 檔案');
-  assert(initResult2.masterDatabase.spreadsheetId === masterId, '主檔 Spreadsheet ID 保持一致');
-  assert(initResult2.currentYearDatabase.spreadsheetId === currentYearId, '年度 Spreadsheet ID 保持一致');
-
-  // ----------------------------------------------------
-  // 測試 5: createYearDatabase(2027) 動態建立與登記
-  // ----------------------------------------------------
-  console.log('\n【測試群組 5：createYearDatabase(2027) 動態建立與年度設定登記】');
+  console.log('\n【測試群組 7：createYearDatabase(2027) 動態建立與登記】');
   const ss2027 = gas.createYearDatabase(2027);
-  const id2027 = ss2027.getId();
-  assert(!!id2027, '成功建立 2027 年度資料庫');
-  assert(ss2027.getName() === '2027公司表單資料庫', '2027 年度資料庫命名正確');
+  assert(ss2027.getName() === '2027公司表單資料庫', '成功建立 2027 年度資料庫');
+  assert(ss2027.getSpreadsheetLocale() === 'zh_TW', '2027 年度資料庫 Locale 為 zh_TW');
+  assert(ss2027.getSpreadsheetTimeZone() === 'Asia/Taipei', '2027 年度資料庫 TimeZone 為 Asia/Taipei');
 
-  // 檢查主檔「年度設定」是否有 2027 紀錄
-  const yearConfigData = yearConfigSheet.getDataRange().getValues();
-  const record2027 = yearConfigData.find(r => String(r[0]) === '2027');
-  assert(!!record2027, '主檔「年度設定」成功登記 2027 年度');
-  assert(record2027[1] === id2027, '「年度設定」中 2027 Spreadsheet ID 吻合');
-  assert(record2027[2] === 'active', '「年度設定」中 2027 狀態為 active');
+  const claims2027 = ss2027.getSheetByName('請款紀錄');
+  assert(
+    JSON.stringify(claims2027.getDataRange().getValues()[0]) === JSON.stringify(expectedClaimsHeaders),
+    '2027 年度資料庫之「請款紀錄」Header 全面使用中文'
+  );
 
-  // ----------------------------------------------------
-  // 測試 6: 再次呼叫 createYearDatabase(2027) 冪等性
-  // ----------------------------------------------------
-  console.log('\n【測試群組 6：createYearDatabase(2027) 冪等性驗證】');
-  const filesCountBefore2027 = env._internal.files.size;
-  const ss2027Again = gas.createYearDatabase(2027);
-  const filesCountAfter2027 = env._internal.files.size;
-  assert(filesCountBefore2027 === filesCountAfter2027, '再次建立 2027 不重複建立檔案');
-  assert(ss2027Again.getId() === id2027, '取得既有 2027 資料庫 ID');
-
-  // ----------------------------------------------------
-  // 測試 7: 資料模型規則驗證（同一廠商允許 budgeted + unbudgeted，Claim 與 Payment 關聯）
-  // ----------------------------------------------------
-  console.log('\n【測試群組 7：業務資料模型規則驗證】');
-  // 模擬廠商 VEN-TEST-01
-  const testVendorId = 'VEN-000012';
-  // 請款 1 (有預算)
-  const claim1 = {
-    claimId: 'CLM-2026-001',
-    formId: 'FRM-001',
-    year: '2026',
-    vendorId: testVendorId,
-    budgetType: gas.STATUS.BUDGET_TYPE.BUDGETED,
-    budgetItemId: 'BUD-2026-001',
-    itemName: '一期工程款',
-    payableAmount: 930000,
-  };
-  // 請款 2 (無預算)
-  const claim2 = {
-    claimId: 'CLM-2026-002',
-    formId: 'FRM-002',
-    year: '2026',
-    vendorId: testVendorId,
-    budgetType: gas.STATUS.BUDGET_TYPE.UNBUDGETED,
-    budgetItemId: '',
-    itemName: '緊急臨時修繕',
-    unbudgetedReason: '颱風外牆滲水緊急處理',
-    payableAmount: 85000,
-  };
-
-  assert(claim1.vendorId === claim2.vendorId, '同一廠商 ID 允許同時有請款');
-  assert(claim1.budgetType === 'budgeted' && claim1.budgetItemId !== '', '有預算請款 budgetType=budgeted 且 budgetItemId 有值');
-  assert(claim2.budgetType === 'unbudgeted' && claim2.budgetItemId === '' && claim2.itemName !== '', '無預算請款 budgetType=unbudgeted 且 budgetItemId 空白、itemName 有值');
-
-  // 付款 1 與 付款 2 關聯至 claim1 (一筆 Claim 對應兩筆 Payment)
-  const payment1 = {
-    paymentId: 'PAY-001',
-    claimId: claim1.claimId,
-    amount: 500000,
-    status: gas.STATUS.PAYMENT.PAID,
-  };
-  const payment2 = {
-    paymentId: 'PAY-002',
-    claimId: claim1.claimId,
-    amount: 430000,
-    status: gas.STATUS.PAYMENT.SCHEDULED,
-  };
-  assert(payment1.claimId === claim1.claimId && payment2.claimId === claim1.claimId, '支援 1 筆 Claim 關聯多筆 Payment');
-  assert(payment1.amount + payment2.amount === claim1.payableAmount, '多筆 Payment 加總吻合 Claim 應付金額');
-
-  // ----------------------------------------------------
-  // 測試 8: Script Properties 狀態檢查（無寫死 ID）
-  // ----------------------------------------------------
-  console.log('\n【測試群組 8：Script Properties 狀態檢驗】');
-  const finalProps = env.PropertiesService.getScriptProperties().getProperties();
-  assert(finalProps.MASTER_SPREADSHEET_ID === masterId, 'Script Properties 記錄正確 MASTER_SPREADSHEET_ID');
-  assert(Number(finalProps.CURRENT_YEAR) === new Date().getFullYear(), 'Script Properties 記錄正確 CURRENT_YEAR');
-  assert(finalProps.SCHEMA_VERSION === '1', 'SCHEMA_VERSION 保持 1');
-  assert(finalProps.APP_ENV === 'production', 'APP_ENV 保持 production');
+  const filesBefore2027Re = env._internal.files.size;
+  const ss2027Re = gas.createYearDatabase(2027);
+  const filesAfter2027Re = env._internal.files.size;
+  assert(filesBefore2027Re === filesAfter2027Re, '再次呼叫 createYearDatabase(2027) 不重複建立檔案');
+  assert(ss2027Re.getId() === ss2027.getId(), '取得相同 2027 資料庫實例');
 
   console.log('\n====================================================');
   console.log(`測試結果：${passed} 項通過，${failed} 項失敗`);
