@@ -11,3 +11,4 @@ sample-outputs/
 .vercel/
 /*.xlsm
 /*.xlsx
+.clasp.json
