@@ -1,4 +1,4 @@
-﻿export type SealApprovalType = '簽呈' | '用印' | '借印';
+export type SealApprovalType = '簽呈' | '用印' | '借印';
 
 export interface SealApprovalData {
   company: string;          // 公司名稱（預設三家之一或自填）
@@ -12,6 +12,7 @@ export const DEFAULT_COMPANIES = [
   '昇陽開發實業股份有限公司',
   '頂邑開發股份有限公司',
   '紫雲國際股份有限公司',
+  '馬非廣告股份有限公司',
 ];
 
 export const INITIAL_SEAL_APPROVAL_DATA: SealApprovalData = {

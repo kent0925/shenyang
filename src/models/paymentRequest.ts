@@ -1,4 +1,4 @@
-﻿export interface BankAccountInfo {
+export interface BankAccountInfo {
   type: 'code' | 'name';    // 銀行代碼或銀行全名二擇一
   bankCode: string;         // 銀行代碼（如 007）
   bankName: string;         // 銀行全名（如 第一商業銀行）
@@ -23,9 +23,20 @@ export interface PaymentRequestData {
   project: string;          // 專案代號/名稱
   requisitionNumber: string;// 請購單編號
   vendor: string;           // 受款人/廠商
+  vendorTaxId?: string;     // 統一編號（8 碼數字，選填）
   department: string;       // 費用歸屬部門
   contractNumber: string;   // 合約/訂購單編號
-  bankAccount: BankAccountInfo; // 銀行帳號結構化資訊
+
+  // 銀行帳號結構化資訊
+  bankAccount: BankAccountInfo;
+  bankCode?: string;         // 3 碼銀行代碼（如 007）
+  bankName?: string;         // 銀行名稱（如 第一商業銀行）
+  branchCode?: string;       // 分行代碼（如 1440）
+  branchName?: string;       // 分行名稱（如 城東分行）
+  accountName?: string;      // 戶名
+  accountNumber?: string;    // 帳號（字串型態，保留前置 0）
+  accountNameSameAsVendor?: boolean; // 戶名是否同受款人/廠商名稱（預設 true）
+
   expenseNature: string;    // 費用性質
   contractTotal: string;    // 合約/訂購單總額
   dueDate: string;          // 付款到期日 YYYY-MM-DD
@@ -46,6 +57,7 @@ export const INITIAL_PAYMENT_REQUEST_DATA: PaymentRequestData = {
   project: '',
   requisitionNumber: '',
   vendor: '',
+  vendorTaxId: '',
   department: '',
   contractNumber: '',
   bankAccount: {
@@ -56,6 +68,13 @@ export const INITIAL_PAYMENT_REQUEST_DATA: PaymentRequestData = {
     accountName: '',
     accountNumber: '',
   },
+  bankCode: '',
+  bankName: '',
+  branchCode: '',
+  branchName: '',
+  accountName: '',
+  accountNumber: '',
+  accountNameSameAsVendor: true,
   expenseNature: '',
   contractTotal: '',
   dueDate: '',

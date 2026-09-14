@@ -1,7 +1,7 @@
-﻿import JSZip from 'jszip';
+import JSZip from 'jszip';
 import { PaymentRequestData } from '../../models/paymentRequest';
 import { parseDateParts } from '../../utils/date';
-import { formatBankAccount } from '../../utils/format';
+import { formatPaymentBankAccount } from '../../utils/format';
 import { clearCellRange, updateSheetCell } from './ooxmlHelper';
 
 /**
@@ -10,6 +10,7 @@ import { clearCellRange, updateSheetCell } from './ooxmlHelper';
  * 1. 嚴格保留原始公式（如 T13: =H13-I13-L13-N13, T15 等），禁止覆寫任何公式儲存格
  * 2. 說明 G22:G37 全區先清除再填入，避免舊資料殘留
  * 3. 準確設定 VML 表單控制項之核取方塊狀態
+ * 4. 遠期支票年月日寫入 N21(年), P21(月), R21(日)，保留 O21(年), Q21(月), S21(日) 之文字標籤
  */
 export async function generatePaymentRequestExcel(data: PaymentRequestData): Promise<Blob> {
   const response = await fetch('/templates/請款單.xlsx');
@@ -49,7 +50,10 @@ export async function generatePaymentRequestExcel(data: PaymentRequestData): Pro
   sheet1Xml = updateSheetCell(sheet1Xml, 'I5', data.requisitionNumber);
 
   // 受款人/廠商 (N5)
-  sheet1Xml = updateSheetCell(sheet1Xml, 'N5', data.vendor);
+  const vendorDisplay = data.vendorTaxId?.trim()
+    ? `${data.vendor}（統編：${data.vendorTaxId.trim()}）`
+    : data.vendor;
+  sheet1Xml = updateSheetCell(sheet1Xml, 'N5', vendorDisplay);
 
   // 費用歸屬部門 (E7)
   sheet1Xml = updateSheetCell(sheet1Xml, 'E7', data.department);
@@ -58,7 +62,7 @@ export async function generatePaymentRequestExcel(data: PaymentRequestData): Pro
   sheet1Xml = updateSheetCell(sheet1Xml, 'I7', data.contractNumber);
 
   // 受款人/廠商匯款帳號 (N7)
-  const formattedBank = formatBankAccount(data.bankAccount);
+  const formattedBank = formatPaymentBankAccount(data);
   sheet1Xml = updateSheetCell(sheet1Xml, 'N7', formattedBank);
 
   // 費用性質 (E10)
@@ -88,20 +92,20 @@ export async function generatePaymentRequestExcel(data: PaymentRequestData): Pro
   sheet1Xml = updateSheetCell(sheet1Xml, 'L13', data.advanceDeduction ? parseFloat(data.advanceDeduction.replace(/,/g, '')) : null, 'number');
   // N13: (4) 罰扣（折讓金額）
   sheet1Xml = updateSheetCell(sheet1Xml, 'N13', data.penaltyDiscount ? parseFloat(data.penaltyDiscount.replace(/,/g, '')) : null, 'number');
-  // 注意：T13 是原生公式 =H13-I13-L13-N13，T15 同樣為公式，updateSheetCell 會主動忽略保護！
+  // 注意：T13 是原生公式 =H13-I13-L13-N13，T15 同樣為公式，updateSheetCell 含有公式防禦會主動保留！
 
-  // 遠期支票到期日 (O21, Q21, S21)
+  // 遠期支票到期日 (填入 N21, P21, R21，保留 O21, Q21, S21 的「年月日」字樣)
   if (data.specialRequirements.postDatedCheck && data.specialRequirements.postDatedDate) {
     const postParts = parseDateParts(data.specialRequirements.postDatedDate);
     if (postParts) {
-      sheet1Xml = updateSheetCell(sheet1Xml, 'O21', postParts.rocYear, 'number');
-      sheet1Xml = updateSheetCell(sheet1Xml, 'Q21', postParts.month, 'number');
-      sheet1Xml = updateSheetCell(sheet1Xml, 'S21', postParts.day, 'number');
+      sheet1Xml = updateSheetCell(sheet1Xml, 'N21', postParts.rocYear, 'number');
+      sheet1Xml = updateSheetCell(sheet1Xml, 'P21', postParts.month, 'number');
+      sheet1Xml = updateSheetCell(sheet1Xml, 'R21', postParts.day, 'number');
     }
   } else {
-    sheet1Xml = updateSheetCell(sheet1Xml, 'O21', null);
-    sheet1Xml = updateSheetCell(sheet1Xml, 'Q21', null);
-    sheet1Xml = updateSheetCell(sheet1Xml, 'S21', null);
+    sheet1Xml = updateSheetCell(sheet1Xml, 'N21', null);
+    sheet1Xml = updateSheetCell(sheet1Xml, 'P21', null);
+    sheet1Xml = updateSheetCell(sheet1Xml, 'R21', null);
   }
 
   // 請款說明：先清空 G22:G37 全區
@@ -138,10 +142,8 @@ export async function generatePaymentRequestExcel(data: PaymentRequestData): Pro
     for (const [shapeId, isChecked] of Object.entries(shapeCheckboxMap)) {
       const shapeRegex = new RegExp(`(<v:shape[^>]*id="${shapeId}"[\\s\\S]*?<\\/v:shape>)`, 'g');
       vmlXml = vmlXml.replace(shapeRegex, (match) => {
-        // 先移除可能已有的 <x:Checked>...</x:Checked>
         let cleaned = match.replace(/<x:Checked>\d+<\/x:Checked>\s*/g, '');
         if (isChecked) {
-          // 在 </x:ClientData> 前插入 <x:Checked>1</x:Checked>
           cleaned = cleaned.replace('</x:ClientData>', '   <x:Checked>1</x:Checked>\n  </x:ClientData>');
         }
         return cleaned;
