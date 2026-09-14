@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PaymentRequestData } from '../../models/paymentRequest';
 import { DEFAULT_COMPANIES } from '../../models/sealApproval';
 import {
@@ -6,12 +6,13 @@ import {
   Calendar,
   DollarSign,
   Building2,
-  Search,
   Loader2,
   CheckCircle2,
   ShieldCheck,
   Building,
   Landmark,
+  AlertTriangle,
+  RotateCw,
 } from 'lucide-react';
 import { calculatePayableAmount, formatCurrency } from '../../utils/format';
 import { validateTaxId, lookupCompanyByTaxId } from '../../services/companyLookup';
@@ -19,7 +20,7 @@ import {
   loadBanks,
   findBankByCode,
   findBranchByCode,
-  BankItem,
+  FinancialInstitution,
 } from '../../services/bankLookup';
 
 interface Props {
@@ -29,12 +30,15 @@ interface Props {
 }
 
 export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) => {
-  const [banks, setBanks] = useState<BankItem[]>([]);
+  const [banks, setBanks] = useState<FinancialInstitution[]>([]);
   const [isSearchingCompany, setIsSearchingCompany] = useState(false);
   const [companySearchMsg, setCompanySearchMsg] = useState<{
     type: 'success' | 'error' | 'info';
     text: string;
   } | null>(null);
+
+  const lastQueriedTaxIdRef = useRef<string>('');
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     loadBanks()
@@ -47,27 +51,39 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
   const taxIdValue = (data.vendorTaxId || '').trim();
   const isTaxIdValid = validateTaxId(taxIdValue);
 
-  const handleTaxIdLookup = async () => {
-    if (!taxIdValue) {
-      setCompanySearchMsg({ type: 'error', text: '請輸入統一編號' });
+  // 核心統一編號查詢邏輯（支援 AbortSignal 與自動/手動切換）
+  const performTaxIdLookup = async (targetTaxId: string, isManual = false) => {
+    const cleanId = (targetTaxId || '').trim();
+    if (!cleanId || cleanId.length !== 8 || !validateTaxId(cleanId)) {
+      if (isManual) {
+        if (!cleanId) setCompanySearchMsg({ type: 'error', text: '請輸入統一編號' });
+        else if (cleanId.length !== 8) setCompanySearchMsg({ type: 'error', text: '請輸入完整 8 碼統一編號' });
+        else setCompanySearchMsg({ type: 'error', text: '統一編號檢核碼不符，請確認是否輸入正確' });
+      }
       return;
     }
-    if (taxIdValue.length !== 8) {
-      setCompanySearchMsg({ type: 'error', text: '請輸入完整 8 碼統一編號' });
+
+    if (!isManual && lastQueriedTaxIdRef.current === cleanId) {
       return;
     }
-    if (!validateTaxId(taxIdValue)) {
-      setCompanySearchMsg({ type: 'error', text: '統一編號檢核碼不符，請確認是否輸入正確' });
-      return;
+
+    // 終止前一個連線中的查詢
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     setIsSearchingCompany(true);
-    setCompanySearchMsg(null);
+    setCompanySearchMsg({ type: 'info', text: '正在查詢登記資料…' });
 
     try {
-      const result = await lookupCompanyByTaxId(taxIdValue);
-      if (result && result.companyName) {
-        const newVendor = result.companyName;
+      const result = await lookupCompanyByTaxId(cleanId, controller.signal);
+      if (controller.signal.aborted) return;
+      lastQueriedTaxIdRef.current = cleanId;
+
+      if (result && result.found && (result.name || result.companyName)) {
+        const newVendor = (result.name || result.companyName)!.trim();
         const updates: Partial<PaymentRequestData> = {
           vendor: newVendor,
         };
@@ -87,22 +103,51 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
 
         setCompanySearchMsg({
           type: 'success',
-          text: `已自動帶入商工登記名稱：${newVendor}`,
+          text: `✓ 已帶入：${newVendor}`,
+        });
+      } else if (result && result.entityType === 'branch') {
+        setCompanySearchMsg({
+          type: 'info',
+          text: '此為分公司統一編號，請手動輸入受款人名稱。',
         });
       } else {
         setCompanySearchMsg({
           type: 'info',
-          text: '經濟部公開商工登記查無此統一編號，請手動輸入廠商名稱',
+          text: '查無登記資料，請確認統一編號或手動輸入受款人名稱。',
         });
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        return;
+      }
       setCompanySearchMsg({
         type: 'error',
         text: err.message || '公司資料服務暫時無法使用，請稍後再試或手動輸入廠商名稱。',
       });
     } finally {
-      setIsSearchingCompany(false);
+      if (!controller.signal.aborted) {
+        setIsSearchingCompany(false);
+      }
     }
+  };
+
+  // 滿 8 碼且新制校驗通過後 500ms Debounce 自動查詢
+  useEffect(() => {
+    const cleanId = (data.vendorTaxId || '').trim();
+    if (cleanId.length === 8 && validateTaxId(cleanId)) {
+      const timer = setTimeout(() => {
+        performTaxIdLookup(cleanId, false);
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      if (cleanId.length < 8) {
+        lastQueriedTaxIdRef.current = '';
+      }
+    }
+  }, [data.vendorTaxId]);
+
+  const handleManualTaxIdLookup = () => {
+    performTaxIdLookup(taxIdValue, true);
   };
 
   const handleVendorChange = (newVendor: string) => {
@@ -452,26 +497,27 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      handleTaxIdLookup();
+                      handleManualTaxIdLookup();
                     }
                   }}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white font-mono tracking-wider"
                 />
                 <button
                   type="button"
-                  onClick={handleTaxIdLookup}
-                  disabled={isSearchingCompany || taxIdValue.length !== 8}
-                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors flex-shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                  onClick={handleManualTaxIdLookup}
+                  disabled={isSearchingCompany || taxIdValue.length !== 8 || !isTaxIdValid}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 disabled:bg-slate-50 disabled:text-slate-300 text-slate-700 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors flex-shrink-0 border border-slate-200 disabled:border-slate-100 cursor-pointer disabled:cursor-not-allowed"
+                  title="手動重新查詢登記資料"
                 >
                   {isSearchingCompany ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>查詢中</span>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                      <span className="text-blue-600">查詢中</span>
                     </>
                   ) : (
                     <>
-                      <Search className="w-3.5 h-3.5" />
-                      <span>查詢公司</span>
+                      <RotateCw className="w-3.5 h-3.5 text-slate-500" />
+                      <span>重新查詢</span>
                     </>
                   )}
                 </button>
@@ -488,6 +534,7 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
                 >
                   {companySearchMsg.type === 'success' && <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />}
                   {companySearchMsg.type === 'error' && <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+                  {companySearchMsg.type === 'info' && <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin" />}
                   <span>{companySearchMsg.text}</span>
                 </p>
               )}
@@ -510,26 +557,26 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
           </div>
         </div>
 
-        {/* 銀行帳號結構化輸入 (N7) */}
+        {/* 金融機構與帳號結構化輸入 (N7) */}
         <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
               <Landmark className="w-4 h-4 text-slate-600" />
-              <span>匯款銀行與帳號明細 (N7)</span>
+              <span>匯款金融機構與帳號明細 (N7)</span>
             </div>
-            <span className="text-[11px] text-slate-400">依金管會金融機構代碼與分行資料庫雙向連動</span>
+            <span className="text-[11px] text-slate-400">依官方金融機構代碼與分支機構資料庫雙向連動</span>
           </div>
 
-          {/* 第一列：銀行代碼與銀行名稱 */}
+          {/* 第一列：金融機構代碼與名稱 */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
             <div className="sm:col-span-4">
               <label className="block text-xs font-semibold text-slate-600 mb-1">
-                銀行代碼（3 碼）
+                機構代碼（3 碼）
               </label>
               <input
                 type="text"
                 maxLength={3}
-                placeholder="如 007"
+                placeholder="如 007, 700"
                 value={data.bankCode || ''}
                 onChange={(e) => handleBankCodeChange(e.target.value)}
                 className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
@@ -537,14 +584,14 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
             </div>
             <div className="sm:col-span-8">
               <label className="block text-xs font-semibold text-slate-600 mb-1">
-                銀行名稱（可下拉選取或由代碼自動帶入）
+                金融機構名稱（可下拉選取或由代碼自動帶入）
               </label>
               <select
                 value={currentBank ? currentBank.code : ''}
                 onChange={(e) => handleBankSelect(e.target.value)}
                 className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
               >
-                <option value="">-- 請選擇或輸入銀行代碼 --</option>
+                <option value="">-- 請選擇或輸入金融機構代碼 --</option>
                 {banks.map((b) => (
                   <option key={b.code} value={b.code}>
                     {b.code} {b.name}
@@ -554,16 +601,16 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
             </div>
           </div>
 
-          {/* 第二列：分行代碼與分行名稱 */}
+          {/* 第二列：分支代碼與分支名稱 */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
             <div className="sm:col-span-4">
               <label className="block text-xs font-semibold text-slate-600 mb-1">
-                分行代碼（4 碼）
+                分支代碼（4 碼）
               </label>
               <input
                 type="text"
                 maxLength={4}
-                placeholder="如 1440"
+                placeholder="如 1440, 0021"
                 value={data.branchCode || ''}
                 onChange={(e) => handleBranchCodeChange(e.target.value)}
                 className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
@@ -571,7 +618,7 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
             </div>
             <div className="sm:col-span-8">
               <label className="block text-xs font-semibold text-slate-600 mb-1">
-                分行名稱（已依銀行篩選分支機構）
+                分支名稱（已依金融機構篩選分支機構）
               </label>
               {currentBranches.length > 0 ? (
                 <select
@@ -579,7 +626,7 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
                   onChange={(e) => handleBranchSelect(e.target.value)}
                   className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  <option value="">-- 請選擇分行 ({currentBranches.length} 家) --</option>
+                  <option value="">-- 請選擇分支機構 ({currentBranches.length} 家) --</option>
                   {currentBranches.map((br) => (
                     <option key={br.code} value={br.code}>
                       {br.code} {br.name}
@@ -589,7 +636,7 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
               ) : (
                 <input
                   type="text"
-                  placeholder="請先選擇銀行或手動輸入分行名稱"
+                  placeholder="請先選擇金融機構或手動輸入分支名稱"
                   value={data.branchName || ''}
                   onChange={(e) => {
                     const name = e.target.value;
@@ -605,7 +652,7 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
             </div>
           </div>
 
-          {/* 第三列：戶名與銀行帳號 */}
+          {/* 第三列：戶名與帳號 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -638,7 +685,7 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
 
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">
-                銀行帳號（保留前置 0）
+                帳號（保留前置 0）
               </label>
               <input
                 type="text"
@@ -647,6 +694,24 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
                 onChange={(e) => handleAccountNumberChange(e.target.value)}
                 className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
               />
+              {(() => {
+                const isPost = data.bankCode === '700';
+                const isPostPassbook = isPost && (data.branchCode === '0021' || (data.branchName && data.branchName.includes('存簿')));
+                const isPostGiro = isPost && (data.branchCode === '0010' || (data.branchName && data.branchName.includes('劃撥')));
+                const accNum = (data.accountNumber || '').trim();
+                let warning: string | null = null;
+                if (isPostPassbook && accNum.length > 0 && accNum.length !== 14) {
+                  warning = '郵政存簿儲金帳號通常為 14 位，請確認帳號。';
+                } else if (isPostGiro && accNum.length > 0 && accNum.length !== 8) {
+                  warning = '郵政劃撥儲金帳號通常為 8 位，請確認帳號。';
+                }
+                return warning ? (
+                  <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1 font-medium">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{warning}</span>
+                  </p>
+                ) : null;
+              })()}
             </div>
           </div>
 
