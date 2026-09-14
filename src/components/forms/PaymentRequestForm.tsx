@@ -654,7 +654,7 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
           <div className="mt-2 pt-2.5 border-t border-slate-100 flex items-start gap-2 text-[11px] text-slate-500 leading-relaxed">
             <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
             <span>
-              統一編號查詢僅即時透過官方公開商工登記 API 取得公司名稱，本系統不儲存、不記錄任何統編或商工資料；所有表單資料、銀行帳號與檔案處理均只在您的本機瀏覽器內完成。
+              只有使用者主動使用統編查詢時，8 碼統編會送至 Vercel 查詢 Proxy 並轉送政府公開商工資料服務。廠商名稱、戶名、銀行帳號、金額、請款內容及 Excel/PDF 不會被 Proxy 儲存或傳送。
             </span>
           </div>
         </div>

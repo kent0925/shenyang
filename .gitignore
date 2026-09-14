@@ -9,3 +9,5 @@ sample-outputs/
 *.ps1
 *.mjs
 .vercel/
+/*.xlsm
+/*.xlsx

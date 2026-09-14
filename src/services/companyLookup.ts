@@ -1,10 +1,12 @@
-﻿/**
- * 台灣統一編號 8 碼邏輯檢核
+/**
+ * 台灣營利事業統一編號 8 碼檢核（依財政部 112 年 4 月 1 日新制擴增邏輯）
  * 乘數：[1, 2, 1, 2, 1, 2, 4, 1]
- * 邏輯：
- * 1. 各乘積之十位數與個位數相加。
- * 2. 總和若能被 10 整除則合法。
- * 3. 若第 7 位為 7，乘積為 28 (2+8=10)，則 (sum % 10 === 0) 或 ((sum + 1) % 10 === 0) 均合法。
+ * 規則：
+ * 1. 統一編號每位數字與對應權重相乘。
+ * 2. 各乘積若為兩位數，則十位數與個位數相加，再將所有數值加總 (sum)。
+ * 3. 檢查規則（新制）：總和除以 5 的餘數為 0 則為合法 (sum % 5 === 0)。
+ * 4. 第 7 碼為 7 的特殊情況：乘積為 28 (2+8=10)，若 (sum % 5 !== 0)，
+ *    則將總和加 1 判定：((sum + 1) % 5 === 0) 亦為合法。
  */
 export function validateTaxId(taxId: string): boolean {
   const cleanId = (taxId || '').trim();
@@ -16,14 +18,14 @@ export function validateTaxId(taxId: string): boolean {
   for (let i = 0; i < 8; i++) {
     const num = parseInt(cleanId[i], 10);
     const prod = num * weights[i];
-    // 十位數與個位數相加
     sum += Math.floor(prod / 10) + (prod % 10);
   }
 
-  if (sum % 10 === 0) return true;
+  // 112 年 4 月 1 日新制：除數為 5 (相容舊制能被 10 整除者)
+  if (sum % 5 === 0) return true;
 
   // 第 7 位是 7 的特殊規則 (7*4=28 => 2+8=10 或 1+0=1)
-  if (cleanId[6] === '7' && (sum + 1) % 10 === 0) {
+  if (cleanId[6] === '7' && (sum + 1) % 5 === 0) {
     return true;
   }
 
