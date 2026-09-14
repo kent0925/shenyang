@@ -42,6 +42,7 @@ function loadGasContext(env) {
     DriveApp: env.DriveApp,
     SpreadsheetApp: env.SpreadsheetApp,
     Logger: env.Logger,
+    Date,
     console,
   };
 
@@ -289,13 +290,47 @@ function runTests() {
   );
   assert(
     preservedDataRow[0] === 'VEN-OLD-01' && preservedDataRow[9] === '00987654321',
-    '原有資料列完整保留，絕未被清空或刪除'
+    '原有資料列非日期欄位完整保留，未被清空或更動'
+  );
+  assert(
+    preservedDataRow[11] instanceof Date,
+    '原有 ISO 日期字串建立時間已自動平滑轉為原生 Date 物件'
   );
 
   // ----------------------------------------------------
-  // 測試 6: initializeSystem() 冪等性與年度設定單一紀錄檢驗
+  // 測試 6: ISO 字串日期 Migration 與冪等性專門檢驗
   // ----------------------------------------------------
-  console.log('\n【測試群組 6：initializeSystem() 冪等性與年度設定單一紀錄檢驗】');
+  console.log('\n【測試群組 6：ISO 字串日期 Migration 與冪等性專門檢驗】');
+  // 模擬「年度設定」已有舊版 ISO 字串記錄
+  const testIsoString = '2026-09-14T12:17:48.698Z';
+  const legacyYearConfigSheet = legacySs.insertSheet('舊版年度設定測試');
+  const legacyYearConfigRows = [
+    expectedYearConfigChineseHeaders,
+    ['2026', 'ss_test_2026', 'active', testIsoString, ''], // 封存時間為空白
+  ];
+  legacyYearConfigSheet.getRange(1, 1, 2, expectedYearConfigChineseHeaders.length).setValues(legacyYearConfigRows);
+
+  // 執行 Migration
+  gas.migrateDateCells(legacyYearConfigSheet, gas.SCHEMAS['年度設定']);
+
+  const migratedYearRow = legacyYearConfigSheet.getRange(2, 1, 1, expectedYearConfigChineseHeaders.length).getValues()[0];
+  assert(migratedYearRow[0] === '2026', '非日期欄位「年度」維持原值');
+  assert(migratedYearRow[1] === 'ss_test_2026', '非日期欄位「試算表編號」維持原值');
+  assert(migratedYearRow[2] === 'active', '非日期欄位「狀態」維持原值');
+  assert(migratedYearRow[3] instanceof Date, '舊版 ISO 字串建立時間已成功轉為真正的 Date 物件');
+  assert(migratedYearRow[3].getTime() === Date.parse(testIsoString), 'Date 物件時間戳與原 ISO 字串完全一致');
+  assert(migratedYearRow[4] === '', '空白之封存時間保持空白，未被誤處理');
+
+  // 第二次重複執行（檢驗冪等性）
+  gas.migrateDateCells(legacyYearConfigSheet, gas.SCHEMAS['年度設定']);
+  const secondPassYearRow = legacyYearConfigSheet.getRange(2, 1, 1, expectedYearConfigChineseHeaders.length).getValues()[0];
+  assert(secondPassYearRow[3] instanceof Date, '第二次執行後仍維持 Date 物件');
+  assert(secondPassYearRow[3].getTime() === Date.parse(testIsoString), '第二次執行後 Date 時間戳未改變（冪等性通過）');
+
+  // ----------------------------------------------------
+  // 測試 7: initializeSystem() 冪等性與年度設定單一紀錄檢驗
+  // ----------------------------------------------------
+  console.log('\n【測試群組 7：initializeSystem() 冪等性與年度設定單一紀錄檢驗】');
   const filesBefore = env._internal.files.size;
   const reinitResult = gas.initializeSystem();
   const filesAfter = env._internal.files.size;
@@ -310,9 +345,9 @@ function runTests() {
   assert(currentYearRecords.length === 1, '「年度設定」中當年度紀錄保持唯一 1 筆，未重複新增');
 
   // ----------------------------------------------------
-  // 測試 7: createYearDatabase(2027) 動態建立與登記
+  // 測試 8: createYearDatabase(2027) 動態建立與登記
   // ----------------------------------------------------
-  console.log('\n【測試群組 7：createYearDatabase(2027) 動態建立與登記】');
+  console.log('\n【測試群組 8：createYearDatabase(2027) 動態建立與登記】');
   const ss2027 = gas.createYearDatabase(2027);
   assert(ss2027.getName() === '2027公司表單資料庫', '成功建立 2027 年度資料庫');
   assert(ss2027.getSpreadsheetLocale() === 'zh_TW', '2027 年度資料庫 Locale 為 zh_TW');

@@ -119,6 +119,61 @@ function setupSheetStructure(sheet, schema) {
   for (var c = 1; c <= headers.length; c++) {
     sheet.autoResizeColumn(c);
   }
+
+  // 舊日期資料 Migration：將可解析之 ISO 字串平滑轉換為 JavaScript Date 物件
+  migrateDateCells(sheet, schema);
+}
+
+/**
+ * 檢查並將既有資料列中的 ISO 日期字串平滑轉換為 JavaScript 原生 Date 物件
+ * 規則：
+ * 1. 僅處理 schema 定義為 date 或 datetime 的欄位。
+ * 2. 僅轉換可解析的 ISO 日期字串，空白值不處理。
+ * 3. 已經是原生 Date 或數值 serial 者不變動。
+ * 4. 具備冪等性，重複執行不會重複轉換或影響已轉換的值。
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet 目標工作表
+ * @param {Object} schema 表格結構定義
+ */
+function migrateDateCells(sheet, schema) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  var columns = schema.columns;
+  var dateColIndices = [];
+  for (var i = 0; i < columns.length; i++) {
+    if (columns[i].type === 'date' || columns[i].type === 'datetime') {
+      dateColIndices.push(i + 1);
+    }
+  }
+
+  if (dateColIndices.length === 0) return;
+
+  var numRows = lastRow - 1;
+  var dataRange = sheet.getRange(2, 1, numRows, columns.length);
+  var values = dataRange.getValues();
+  var hasChanges = false;
+
+  for (var r = 0; r < numRows; r++) {
+    for (var c = 0; c < dateColIndices.length; c++) {
+      var colIdx0 = dateColIndices[c] - 1;
+      var cellVal = values[r][colIdx0];
+
+      if (typeof cellVal === 'string') {
+        var trimmed = cellVal.trim();
+        if (trimmed !== '' && /^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+          var parsedTime = Date.parse(trimmed);
+          if (!isNaN(parsedTime)) {
+            values[r][colIdx0] = new Date(parsedTime);
+            hasChanges = true;
+          }
+        }
+      }
+    }
+  }
+
+  if (hasChanges) {
+    dataRange.setValues(values);
+  }
 }
 
 /**
