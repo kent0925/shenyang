@@ -98,7 +98,7 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
     } catch (err: any) {
       setCompanySearchMsg({
         type: 'error',
-        text: err.message || '查詢服務連線異常，請手動輸入廠商名稱',
+        text: err.message || '公司資料服務暫時無法使用，請稍後再試或手動輸入廠商名稱。',
       });
     } finally {
       setIsSearchingCompany(false);
