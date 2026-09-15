@@ -28,7 +28,7 @@ import {
   CloudUpload,
   PlusCircle,
 } from 'lucide-react';
-import { AccessGate } from './components/auth/AccessGate';
+
 
 const MainApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<FormTab>('seal');
@@ -433,11 +433,7 @@ const MainApp: React.FC = () => {
 };
 
 export const App: React.FC = () => {
-  return (
-    <AccessGate>
-      <MainApp />
-    </AccessGate>
-  );
+  return <MainApp />;
 };
 
 export default App;

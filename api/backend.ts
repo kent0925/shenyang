@@ -1,25 +1,19 @@
 /**
- * api/backend.ts - Vercel Serverless Function Proxy & Authorization Boundary
+ * api/backend.ts - Vercel Serverless Function Proxy & Request Boundary
  *
  * 核心授權模型：
- * Internal API Key (X-Internal-Api-Key)
+ * Valid Internal API Key (X-Internal-Api-Key)
  * OR
- * (Valid Server-Signed Session (shenyang_session HttpOnly) AND Same-Origin)
+ * Valid Same-Origin Browser Request
  *
- * 核心原則：
- * 1. 登入已移至獨立端點 POST /api/session-login，本入口全面停用 sessionLogin（防範繞過 Firewall）。
- * 2. 保留 sessionStatus、sessionLogout 與各項常規業務 Actions。
+ * 重要安全定位聲明：
+ * 1. Same-Origin 僅為暫時性來源防護邊界 (Request Boundary)，絕非使用者身分驗證 (Authentication)。
+ * 2. 本版本在正式 LINE Login / LIFF 完成前，不得公開作為 Production authenticated business system。
  * 3. 伺服器端自動注入 GAS_API_SHARED_SECRET，絕不對 Client 洩漏 GAS URL 與 Secret。
  * 4. 嚴禁使用萬用字元 CORS (*)。
  */
 
 import type { IncomingMessage, ServerResponse } from 'http';
-import {
-  SESSION_COOKIE_NAME,
-  verifySessionToken,
-  parseCookies,
-  buildClearSessionCookie,
-} from '../server/sessionAuth.ts';
 import { checkOriginBoundary } from '../server/requestSecurity.ts';
 
 export interface VercelApiRequest extends IncomingMessage {
@@ -65,8 +59,8 @@ export default async function handler(
     });
   }
 
-  // 3. 安全防護：徹底移除舊 sessionLogin 入口，防範繞過 /api/session-login Firewall
-  if (action === 'sessionLogin') {
+  // 3. 安全防護：已取消之 Session Actions 一律以 UNKNOWN_ACTION 拒絕
+  if (action === 'sessionLogin' || action === 'sessionStatus' || action === 'sessionLogout') {
     return res.status(400).json({
       ok: false,
       error: {
@@ -76,61 +70,10 @@ export default async function handler(
     });
   }
 
-  // 4. 檢查來源環境與 Cookie
-  const { isSameOrigin, isCrossSite, isLocalDev } = checkOriginBoundary(req);
-  const isSecure = (req.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production') && !isLocalDev;
+  // 4. 檢查來源邊界 (Same-Origin 與 Cross-Site)
+  const { isSameOrigin, isCrossSite } = checkOriginBoundary(req);
 
-  const cookies = parseCookies(req.headers.cookie);
-  const sessionToken = cookies[SESSION_COOKIE_NAME];
-  const sessionSigningSecret = process.env.SESSION_SIGNING_SECRET;
-
-  // ----------------------------------------------------
-  // 5. 內部 Session 狀態與登出 Actions（不轉送 GAS）
-  // ----------------------------------------------------
-
-  if (action === 'sessionStatus') {
-    let isAuthenticated = false;
-    if (sessionToken && sessionSigningSecret) {
-      const validPayload = verifySessionToken(sessionToken, sessionSigningSecret);
-      if (validPayload !== null) {
-        isAuthenticated = true;
-      }
-    }
-
-    return res.status(200).json({
-      ok: true,
-      data: {
-        authenticated: isAuthenticated,
-      },
-    });
-  }
-
-  if (action === 'sessionLogout') {
-    if (isCrossSite) {
-      return res.status(403).json({
-        ok: false,
-        error: {
-          code: 'FORBIDDEN',
-          message: '拒絕跨來源登出請求',
-        },
-      });
-    }
-
-    res.setHeader('Set-Cookie', buildClearSessionCookie(isSecure));
-
-    return res.status(200).json({
-      ok: true,
-      data: {
-        authenticated: false,
-      },
-    });
-  }
-
-  // ----------------------------------------------------
-  // 6. 常規業務 Actions（需經過正式授權邊界後轉送 GAS）
-  // 授權原則：Internal Key OR (Same-Origin AND Valid Session)
-  // ----------------------------------------------------
-
+  // 5. 授權模型驗證：Valid Internal Key OR Same-Origin Browser Request
   const configuredProxyToken = process.env.BACKEND_PROXY_TOKEN;
   const headerKey = req.headers['x-internal-api-key'] || req.headers['X-Internal-Api-Key'];
   const providedKey = Array.isArray(headerKey) ? headerKey[0] : headerKey;
@@ -147,7 +90,7 @@ export default async function handler(
     // 內部自動化／CI／測試金鑰放行
     isAuthorized = true;
   } else {
-    // 瀏覽器存取邊界驗證
+    // 瀏覽器存取邊界防護：嚴禁跨站請求 (CSRF 防護)
     if (isCrossSite) {
       return res.status(403).json({
         ok: false,
@@ -158,6 +101,7 @@ export default async function handler(
       });
     }
 
+    // 非同源且無內部金鑰者一律拒絕
     if (!isSameOrigin) {
       return res.status(401).json({
         ok: false,
@@ -168,28 +112,7 @@ export default async function handler(
       });
     }
 
-    // 必須擁有有效的伺服器簽署 Session Cookie
-    if (!sessionToken || !sessionSigningSecret) {
-      return res.status(401).json({
-        ok: false,
-        error: {
-          code: 'UNAUTHORIZED',
-          message: '未授權的存取請求：請先登入解鎖',
-        },
-      });
-    }
-
-    const sessionPayload = verifySessionToken(sessionToken, sessionSigningSecret);
-    if (!sessionPayload) {
-      return res.status(401).json({
-        ok: false,
-        error: {
-          code: 'UNAUTHORIZED',
-          message: '未授權的存取請求：憑證無效或已過期，請重新登入',
-        },
-      });
-    }
-
+    // 允許同源瀏覽器請求通過邊界
     isAuthorized = true;
   }
 
