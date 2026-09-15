@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PaymentRequestData } from '../../models/paymentRequest';
 import { DEFAULT_COMPANIES } from '../../models/sealApproval';
-import type { Project, Vendor, BudgetItem, FormRecord } from '../../models/backend';
+import type { Project, Vendor, BudgetItem, FormRecord, SubProject } from '../../models/backend';
 import { backendStorageService } from '../../services/backendStorage';
 import { calculateBudgetUsage, BudgetUsageSummary } from '../../services/budgetUsage';
 import {
@@ -52,6 +52,7 @@ export const PaymentRequestForm: React.FC<Props> = ({
 
   // 主檔資料狀態
   const [projects, setProjects] = useState<Project[]>([]);
+  const [subProjects, setSubProjects] = useState<SubProject[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([]);
   const [projectForms, setProjectForms] = useState<FormRecord[]>([]);
@@ -73,10 +74,12 @@ export const PaymentRequestForm: React.FC<Props> = ({
     setIsLoadingMaster(true);
     Promise.all([
       backendStorageService.listProjects().catch(() => [] as Project[]),
+      backendStorageService.listSubProjects().catch(() => [] as SubProject[]),
       backendStorageService.listVendors().catch(() => [] as Vendor[]),
     ])
-      .then(([projList, vendList]) => {
+      .then(([projList, subList, vendList]) => {
         setProjects(projList);
+        setSubProjects(subList);
         setVendors(vendList);
       })
       .finally(() => {
@@ -109,7 +112,7 @@ export const PaymentRequestForm: React.FC<Props> = ({
 
     setIsLoadingBudget(true);
     Promise.all([
-      backendStorageService.listBudgetItems({ year: currentYear, projectId: data.projectId }).catch(() => [] as BudgetItem[]),
+      backendStorageService.listBudgetItems({ year: currentYear, projectId: data.projectId, subProjectId: data.subProjectId }).catch(() => [] as BudgetItem[]),
       backendStorageService.listForms({ year: currentYear, formType: 'payment_request', projectId: data.projectId }).catch(() => [] as FormRecord[]),
     ])
       .then(([items, forms]) => {
@@ -119,7 +122,7 @@ export const PaymentRequestForm: React.FC<Props> = ({
       .finally(() => {
         setIsLoadingBudget(false);
       });
-  }, [data.projectId, currentYear]);
+  }, [data.projectId, data.subProjectId, currentYear]);
 
   // 選取的預算項目
   const selectedBudgetItem = useMemo(() => {
@@ -524,6 +527,8 @@ export const PaymentRequestForm: React.FC<Props> = ({
                   company: newCompany,
                   project: '',
                   projectId: '',
+                  subProjectId: '',
+                  subProjectName: '',
                   budgetItemId: '',
                   budgetItemName: '',
                 });
@@ -580,6 +585,8 @@ export const PaymentRequestForm: React.FC<Props> = ({
                     onChange({
                       ...data,
                       projectId: '',
+                      subProjectId: '',
+                      subProjectName: '',
                       budgetItemId: '',
                       budgetItemName: '',
                     });
@@ -601,6 +608,8 @@ export const PaymentRequestForm: React.FC<Props> = ({
                     ...data,
                     project: e.target.value,
                     projectId: '',
+                    subProjectId: '',
+                    subProjectName: '',
                     budgetItemId: '',
                     budgetItemName: '',
                   })
@@ -616,6 +625,8 @@ export const PaymentRequestForm: React.FC<Props> = ({
                     onChange({
                       ...data,
                       projectId: '',
+                      subProjectId: '',
+                      subProjectName: '',
                       project: '',
                       budgetItemId: '',
                       budgetItemName: '',
@@ -625,6 +636,8 @@ export const PaymentRequestForm: React.FC<Props> = ({
                     onChange({
                       ...data,
                       projectId: pid,
+                      subProjectId: '',
+                      subProjectName: '',
                       project: matched ? matched.projectName : data.project,
                       budgetItemId: '',
                       budgetItemName: '',
@@ -642,6 +655,25 @@ export const PaymentRequestForm: React.FC<Props> = ({
               </select>
             )}
             {errors.project && <p className="text-xs text-red-500 mt-1">{errors.project}</p>}
+          </div>
+
+          {/* 分案（固定為主專案下第二層） */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">分案 <span className="text-red-500">*</span></label>
+            <select
+              value={data.subProjectId || ''}
+              disabled={!data.projectId}
+              onChange={(e) => {
+                const sid = e.target.value;
+                const matched = subProjects.find((s) => s.subProjectId === sid);
+                onChange({ ...data, subProjectId: sid, subProjectName: matched?.subProjectName || '', budgetItemId: '', budgetItemName: '' });
+              }}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-slate-100"
+            >
+              <option value="">-- 請選擇分案 --</option>
+              {subProjects.filter((s) => s.projectId === data.projectId).map((s) => <option key={s.subProjectId} value={s.subProjectId}>{s.subProjectName}{s.status !== 'active' ? '（停用）' : ''}</option>)}
+            </select>
+            {errors.subProjectId && <p className="text-xs text-red-500 mt-1">{errors.subProjectId}</p>}
           </div>
 
           {/* 請購單編號 */}
@@ -747,9 +779,9 @@ export const PaymentRequestForm: React.FC<Props> = ({
                   )}
                 </div>
 
-                {!data.projectId ? (
+                {!data.projectId || !data.subProjectId ? (
                   <div className="p-2 bg-slate-100 border border-dashed border-slate-300 rounded-lg text-xs text-slate-500">
-                    請先於上方選擇「專案主檔」，方可載入該專案之預算項目。
+                    請先於上方選擇「專案主檔」與「分案」，方可載入該分案之預算項目。
                   </div>
                 ) : (
                   <select

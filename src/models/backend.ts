@@ -28,6 +28,27 @@ export interface SaveProjectPayload {
   status?: string;
 }
 
+export interface SubProject {
+  subProjectId: string;
+  projectId: string;
+  subProjectName: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveSubProjectPayload {
+  subProjectId?: string;
+  projectId: string;
+  subProjectName: string;
+  status?: string;
+}
+
+export interface ListSubProjectsPayload {
+  projectId?: string;
+  status?: string;
+}
+
 // ==========================================
 // 2. 廠商主檔 (Vendors)
 // ==========================================
@@ -72,6 +93,8 @@ export interface BudgetItem {
   projectId: string;
   company: string;
   projectName: string;
+  subProjectId?: string;
+  subProjectName?: string;
   itemName: string;
   vendorId: string;
   vendorName: string;
@@ -85,6 +108,7 @@ export interface BudgetItem {
 export interface ListBudgetItemsPayload {
   year?: number | string;
   projectId?: string;
+  subProjectId?: string;
 }
 
 export interface SaveBudgetItemPayload {
@@ -93,6 +117,8 @@ export interface SaveBudgetItemPayload {
   projectId?: string;
   company: string;
   projectName: string;
+  subProjectId?: string;
+  subProjectName?: string;
   itemName: string;
   vendorId?: string;
   vendorName?: string;
@@ -121,6 +147,8 @@ export interface FormRecord<TPayload = any> {
   company: string;
   projectId: string;
   projectName: string;
+  subProjectId?: string;
+  subProjectName?: string;
   vendorId: string;
   vendorName: string;
   vendorTaxId: string;
@@ -156,6 +184,8 @@ export interface SaveFormPayload {
   createdBy?: string;
   projectId?: string;
   projectName?: string;
+  subProjectId?: string;
+  subProjectName?: string;
   vendorId?: string;
   vendorName?: string;
   vendorTaxId?: string;

@@ -103,6 +103,14 @@ function doPost(e) {
         resultData = handleSaveProject(payload);
         break;
 
+      case 'listSubProjects':
+        resultData = handleListSubProjects(payload);
+        break;
+
+      case 'saveSubProject':
+        resultData = handleSaveSubProject(payload);
+        break;
+
       case 'listVendors':
         resultData = handleListVendors(payload);
         break;

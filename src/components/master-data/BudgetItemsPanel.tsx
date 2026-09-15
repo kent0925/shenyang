@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { backendStorageService } from '../../services/backendStorage';
 import { BackendApiError } from '../../services/backendClient';
-import type { BudgetItem, Project, Vendor, SaveBudgetItemPayload } from '../../models/backend';
+import type { BudgetItem, Project, Vendor, SubProject, SaveBudgetItemPayload } from '../../models/backend';
 import {
   Coins,
   Plus,
@@ -41,6 +41,7 @@ export const BudgetItemsPanel: React.FC = () => {
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [subProjects, setSubProjects] = useState<SubProject[]>([]);
 
   // 載入狀態
   const [isLoading, setIsLoading] = useState(true);
@@ -64,6 +65,8 @@ export const BudgetItemsPanel: React.FC = () => {
   const [formData, setFormData] = useState({
     year: new Date().getFullYear(),
     projectId: '',
+    subProjectId: '',
+    subProjectName: '',
     company: '',
     projectName: '',
     itemName: '',
@@ -78,9 +81,10 @@ export const BudgetItemsPanel: React.FC = () => {
   // 1. 載入參照主檔（專案、廠商）與系統現行年度
   const loadReferenceData = useCallback(async () => {
     try {
-      const [healthData, projectsData, vendorsData] = await Promise.all([
+      const [healthData, projectsData, subProjectsData, vendorsData] = await Promise.all([
         backendStorageService.health().catch(() => null),
         backendStorageService.listProjects().catch(() => [] as Project[]),
+        backendStorageService.listSubProjects().catch(() => [] as SubProject[]),
         backendStorageService.listVendors().catch(() => [] as Vendor[]),
       ]);
 
@@ -93,6 +97,7 @@ export const BudgetItemsPanel: React.FC = () => {
       }
 
       setProjects(projectsData);
+      setSubProjects(subProjectsData);
       setVendors(vendorsData);
     } catch {
       // 容錯處理：不中斷主畫面，後續由 loadBudgetItems 回報錯誤
@@ -146,6 +151,8 @@ export const BudgetItemsPanel: React.FC = () => {
     setFormData({
       year: selectedYear || currentYear,
       projectId: firstActiveProject ? firstActiveProject.projectId : '',
+      subProjectId: '',
+      subProjectName: '',
       company: firstActiveProject ? firstActiveProject.company : '',
       projectName: firstActiveProject ? firstActiveProject.projectName : '',
       itemName: '',
@@ -169,6 +176,8 @@ export const BudgetItemsPanel: React.FC = () => {
       projectId: item.projectId || '',
       company: item.company || '',
       projectName: item.projectName || '',
+      subProjectId: item.subProjectId || '',
+      subProjectName: item.subProjectName || '',
       itemName: item.itemName || '',
       vendorId: item.vendorId || '',
       vendorName: item.vendorName || '',
@@ -198,6 +207,8 @@ export const BudgetItemsPanel: React.FC = () => {
         projectId: selected.projectId,
         company: selected.company,
         projectName: selected.projectName,
+        subProjectId: '',
+        subProjectName: '',
       }));
       setFormErrors((prev) => {
         const updated = { ...prev };
@@ -249,6 +260,7 @@ export const BudgetItemsPanel: React.FC = () => {
     if (!formData.projectId || !formData.projectName) {
       errors.projectId = '請選擇所屬專案（若無專案請先至專案主檔建立）';
     }
+    if (!editingItem && !formData.subProjectId) errors.subProjectId = '新增預算項目必須選擇分案';
 
     // 3. 預算項目名稱必填驗證
     if (!formData.itemName.trim()) {
@@ -293,6 +305,8 @@ export const BudgetItemsPanel: React.FC = () => {
         projectId: formData.projectId,
         company: formData.company,
         projectName: formData.projectName,
+        subProjectId: formData.subProjectId || undefined,
+        subProjectName: formData.subProjectName || undefined,
         itemName: formData.itemName.trim(),
         vendorId: formData.vendorId || undefined,
         vendorName: formData.vendorName || undefined,
@@ -766,6 +780,16 @@ export const BudgetItemsPanel: React.FC = () => {
                   readOnly
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-600 cursor-not-allowed"
                 />
+              </div>
+
+              {/* 分案選擇（舊資料可保留未指定） */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">分案 {!editingItem && <span className="text-rose-500">*</span>}</label>
+                <select value={formData.subProjectId} disabled={!formData.projectId || !!editingItem} onChange={(e) => { const s = subProjects.find((x) => x.subProjectId === e.target.value); setFormData((prev) => ({ ...prev, subProjectId: e.target.value, subProjectName: s?.subProjectName || '' })); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100">
+                  <option value="">{editingItem ? '未指定分案（舊資料）' : '-- 請選擇分案 --'}</option>
+                  {subProjects.filter((s) => s.projectId === formData.projectId).map((s) => <option key={s.subProjectId} value={s.subProjectId}>{s.subProjectName}</option>)}
+                </select>
+                {formErrors.subProjectId && <p className="text-xs text-rose-600 mt-1">{formErrors.subProjectId}</p>}
               </div>
 
               {/* 預算項目名稱 */}

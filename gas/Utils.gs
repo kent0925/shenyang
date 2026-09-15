@@ -61,13 +61,48 @@ function setupSheetStructure(sheet, schema) {
       return val === '' || val === null || val === undefined;
     });
 
-    // 檢查是否包含舊版英文 Key
-    var isEnglishOrOldHeader = existingHeaders.some(function (val) {
-      return keys.indexOf(String(val).trim()) !== -1;
+    // 先將英文 key header 正規化為對應中文 label，再進入同一套缺欄插入流程。
+    // 不能直接覆寫英文 header，否則新增欄位會讓既有資料欄位錯位。
+    var normalizedHeaders = existingHeaders.map(function (value) {
+      var normalized = String(value || '').trim();
+      var keyIndex = keys.indexOf(normalized);
+      return keyIndex !== -1 ? headers[keyIndex] : normalized;
     });
 
-    // 若為空白或舊版英文 Header，平滑升級第一列為中文 Header（不影響後續資料）
-    if (isBlankHeader || isEnglishOrOldHeader) {
+    if (isBlankHeader) {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    } else {
+      // Schema 延伸：只插入缺少的欄位，讓既有資料保持在原欄位，不猜測舊資料。
+      // 新欄位會插在 schema 指定位置（例如 projectName 後），其資料列自然為空白。
+      var currentHeaders = normalizedHeaders;
+      var supportsColumnInsert = !!sheet.insertColumnBefore && !!sheet.insertColumnAfter;
+      for (var h = 0; h < headers.length; h++) {
+        if (currentHeaders.indexOf(headers[h]) !== -1) continue;
+        var nextExisting = -1;
+        for (var n = h + 1; n < headers.length; n++) {
+          var candidateIndex = currentHeaders.indexOf(headers[n]);
+          if (candidateIndex !== -1) { nextExisting = candidateIndex; break; }
+        }
+        if (nextExisting !== -1 && supportsColumnInsert) {
+          sheet.insertColumnBefore(nextExisting + 1);
+          currentHeaders.splice(nextExisting, 0, headers[h]);
+        } else if (supportsColumnInsert) {
+          sheet.insertColumnAfter(sheet.getLastColumn());
+          currentHeaders.push(headers[h]);
+        }
+      }
+      if (!supportsColumnInsert) {
+        var oldDataRows = sheet.getLastRow() > 1
+          ? sheet.getRange(2, 1, sheet.getLastRow() - 1, currentHeaders.length).getValues()
+          : [];
+        var migratedRows = oldDataRows.map(function (oldRow) {
+          return headers.map(function (header) {
+            var oldIndex = currentHeaders.indexOf(header);
+            return oldIndex === -1 ? '' : oldRow[oldIndex];
+          });
+        });
+        if (migratedRows.length) sheet.getRange(2, 1, migratedRows.length, headers.length).setValues(migratedRows);
+      }
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     }
   }
