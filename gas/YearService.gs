@@ -60,7 +60,7 @@ function findYearRecordInMaster(masterSs, year) {
  * @return {GoogleAppsScript.Spreadsheet.Spreadsheet|null}
  */
 function getYearDatabase(year) {
-  var masterSs = getMasterDatabase();
+  var masterSs = openMasterDatabaseFast();
   var record = findYearRecordInMaster(masterSs, year);
   if (!record || !record.spreadsheetId) {
     return null;
@@ -68,7 +68,6 @@ function getYearDatabase(year) {
 
   try {
     var ss = SpreadsheetApp.openById(record.spreadsheetId);
-    applySpreadsheetSettings(ss);
     return ss;
   } catch (e) {
     Logger.log('無法開啟年度 ' + year + ' 之 Spreadsheet (' + record.spreadsheetId + '): ' + e.message);
