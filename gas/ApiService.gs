@@ -55,7 +55,7 @@ function findRowIndexById(sheet, id) {
 // ==========================================
 
 function handleListProjects(payload) {
-  var masterSs = getMasterDatabase();
+  var masterSs = openMasterDatabaseFast();
   var sheet = masterSs.getSheetByName(SHEETS.PROJECTS);
   if (!sheet) return [];
 
@@ -85,7 +85,7 @@ function handleSaveProject(payload) {
     throw createApiError('VALIDATION_ERROR', '專案名稱 (projectName) 為必填欄位');
   }
 
-  var masterSs = getMasterDatabase();
+  var masterSs = openMasterDatabaseFast();
   var sheet = masterSs.getSheetByName(SHEETS.PROJECTS);
   var projectId = payload.projectId ? String(payload.projectId).trim() : '';
 
@@ -135,7 +135,7 @@ function handleSaveProject(payload) {
 // ==========================================
 
 function handleListVendors(payload) {
-  var masterSs = getMasterDatabase();
+  var masterSs = openMasterDatabaseFast();
   var sheet = masterSs.getSheetByName(SHEETS.VENDORS);
   if (!sheet) return [];
 
@@ -162,7 +162,7 @@ function handleSaveVendor(payload) {
     throw createApiError('VALIDATION_ERROR', '廠商名稱 (vendorName) 為必填欄位');
   }
 
-  var masterSs = getMasterDatabase();
+  var masterSs = openMasterDatabaseFast();
   var sheet = masterSs.getSheetByName(SHEETS.VENDORS);
   var vendorId = payload.vendorId ? String(payload.vendorId).trim() : '';
 

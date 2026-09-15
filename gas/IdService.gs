@@ -90,7 +90,7 @@ function getNextId(type, year) {
 
         if (currentSeqStrPrj === null || currentSeqStrPrj === '') {
           // Bootstrap：由主檔「專案主檔」搜尋最大序號
-          var masterSsPrj = getMasterDatabase();
+          var masterSsPrj = openMasterDatabaseFast();
           var prjSheet = masterSsPrj.getSheetByName(SHEETS.PROJECTS);
           currentSeqPrj = scanMaxSequenceFromSheet(prjSheet, /^PRJ-(\d+)$/);
         } else {
@@ -109,7 +109,7 @@ function getNextId(type, year) {
 
         if (currentSeqStrVen === null || currentSeqStrVen === '') {
           // Bootstrap：由主檔「廠商主檔」搜尋最大序號
-          var masterSsVen = getMasterDatabase();
+          var masterSsVen = openMasterDatabaseFast();
           var venSheet = masterSsVen.getSheetByName(SHEETS.VENDORS);
           currentSeqVen = scanMaxSequenceFromSheet(venSheet, /^VEN-(\d+)$/);
         } else {

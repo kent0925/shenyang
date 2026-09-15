@@ -99,3 +99,18 @@ function getMasterDatabase() {
 
   return masterSs;
 }
+
+/**
+ * 以最短路徑開啟主檔資料庫，供正常 CRUD runtime path 使用。
+ * 初始化、schema repair 與 migration 必須由 getMasterDatabase() 負責。
+ * @return {GoogleAppsScript.Spreadsheet.Spreadsheet}
+ */
+function openMasterDatabaseFast() {
+  var masterId = getMasterSpreadsheetId();
+
+  if (!masterId || String(masterId).trim() === '') {
+    throw new Error('MASTER_SPREADSHEET_ID 尚未初始化');
+  }
+
+  return SpreadsheetApp.openById(String(masterId).trim());
+}
