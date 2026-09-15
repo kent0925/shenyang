@@ -8,9 +8,10 @@
 import React, { useState } from 'react';
 import { ProjectsPanel } from './ProjectsPanel';
 import { VendorsPanel } from './VendorsPanel';
-import { FolderKanban, Building2 } from 'lucide-react';
+import { BudgetItemsPanel } from './BudgetItemsPanel';
+import { FolderKanban, Building2, Coins } from 'lucide-react';
 
-export type MasterDataTab = 'projects' | 'vendors';
+export type MasterDataTab = 'projects' | 'vendors' | 'budgets';
 
 export const MasterDataPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<MasterDataTab>('projects');
@@ -45,17 +46,32 @@ export const MasterDataPanel: React.FC = () => {
             <Building2 className="w-4 h-4" />
             <span>廠商主檔</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('budgets')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${
+              activeTab === 'budgets'
+                ? 'bg-white text-blue-700 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Coins className="w-4 h-4" />
+            <span>預算項目</span>
+          </button>
         </div>
 
         <div className="text-xs text-slate-500 hidden sm:block">
-          {activeTab === 'projects'
-            ? '管理公司所屬專案資料與運作狀態'
-            : '維護常用受款廠商、統編與銀行匯款帳戶'}
+          {activeTab === 'projects' && '管理公司所屬專案資料與運作狀態'}
+          {activeTab === 'vendors' && '維護常用受款廠商、統編與銀行匯款帳戶'}
+          {activeTab === 'budgets' && '維護各年度專案預算編列、指定廠商與執行額度'}
         </div>
       </div>
 
       {/* 依分頁呈現內容 */}
-      {activeTab === 'projects' ? <ProjectsPanel /> : <VendorsPanel />}
+      {activeTab === 'projects' && <ProjectsPanel />}
+      {activeTab === 'vendors' && <VendorsPanel />}
+      {activeTab === 'budgets' && <BudgetItemsPanel />}
     </div>
   );
 };
