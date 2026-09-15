@@ -333,6 +333,60 @@ assert(legacyDeserialized.vendorId === '', 'T8.4: 舊表單不捏造 vendorId');
 assert(legacyDeserialized.budgetItemId === '', 'T8.5: 舊表單不捏造 budgetItemId');
 assert(legacyDeserialized.budgetType === 'unbudgeted', 'T8.6: 舊表單自動相容為 unbudgeted');
 
+// ==========================================
+// R3: 變更廠商時清除不相容之 BudgetItem
+// ==========================================
+function simulateVendorSelect(currentForm: PaymentRequestData, selectedBudgetItem: { vendorId?: string } | undefined, newVendorId: string) {
+  const updates: Partial<PaymentRequestData> = {
+    vendorId: newVendorId,
+  };
+  if (selectedBudgetItem && selectedBudgetItem.vendorId && selectedBudgetItem.vendorId.trim() !== '') {
+    if (selectedBudgetItem.vendorId !== newVendorId) {
+      updates.budgetItemId = '';
+      updates.budgetItemName = '';
+    }
+  }
+  return { ...currentForm, ...updates };
+}
+
+const formWithVendorA: PaymentRequestData = {
+  ...fullPaymentData,
+  projectId: 'PRJ-001',
+  vendorId: 'VND-A',
+  budgetItemId: 'BGT-001',
+  budgetItemName: '工程項目',
+};
+
+const itemAssignedVendorA = { vendorId: 'VND-A' };
+
+const switchedToB = simulateVendorSelect(formWithVendorA, itemAssignedVendorA, 'VND-B');
+assert(switchedToB.vendorId === 'VND-B', 'R3.1: 成功切換為 Vendor B');
+assert(switchedToB.budgetItemId === '', 'R3.2: 與項目指定廠商不符時清除 budgetItemId');
+assert(switchedToB.budgetItemName === '', 'R3.3: 與項目指定廠商不符時清除 budgetItemName');
+assert(switchedToB.projectId === 'PRJ-001', 'R3.4: projectId 完整保留不清除');
+
+// ==========================================
+// R4: 手動修改 Vendor 名稱時若清空 vendorId，且項目有指定廠商，一併清除 BudgetItem
+// ==========================================
+function simulateManualVendorChange(currentForm: PaymentRequestData, currentLinkedVendorName: string, newVendorName: string, selectedBudgetItem: { vendorId?: string } | undefined) {
+  const shouldClearVendorId = currentLinkedVendorName !== newVendorName;
+  const updates: Partial<PaymentRequestData> = {
+    vendor: newVendorName,
+    vendorId: shouldClearVendorId ? '' : currentForm.vendorId,
+  };
+  if (shouldClearVendorId && selectedBudgetItem && selectedBudgetItem.vendorId && selectedBudgetItem.vendorId.trim() !== '') {
+    updates.budgetItemId = '';
+    updates.budgetItemName = '';
+  }
+  return { ...currentForm, ...updates };
+}
+
+const manualSwitched = simulateManualVendorChange(formWithVendorA, '台灣水泥股份有限公司', '其他手動廠商', itemAssignedVendorA);
+assert(manualSwitched.vendorId === '', 'R4.1: 手動修改名稱後 vendorId 被清除');
+assert(manualSwitched.budgetItemId === '', 'R4.2: 項目有指定廠商時 budgetItemId 被一併清除');
+assert(manualSwitched.budgetItemName === '', 'R4.3: 項目有指定廠商時 budgetItemName 被一併清除');
+assert(manualSwitched.projectId === 'PRJ-001', 'R4.4: projectId 依然完整保留');
+
 console.log(`\n測試總結：${passed} 通過，${failed} 失敗`);
 if (failed > 0) process.exit(1);
 

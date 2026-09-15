@@ -451,8 +451,26 @@ function validatePaymentBudget(year, payload, excludeFormId) {
   var budgetItem = rowToObject(SHEETS.BUDGET_ITEMS, budgetRowValues);
 
   // 1. 專案關聯驗證
-  if (payload.projectId && String(payload.projectId).trim() !== String(budgetItem.projectId).trim()) {
-    throw createApiError('VALIDATION_ERROR', '請款專案編號與預算項目所屬專案不符');
+  var payloadProjectId = payload.projectId
+    ? String(payload.projectId).trim()
+    : '';
+
+  var budgetProjectId = budgetItem.projectId
+    ? String(budgetItem.projectId).trim()
+    : '';
+
+  if (!payloadProjectId) {
+    throw createApiError(
+      'VALIDATION_ERROR',
+      '有預算請款必須提供專案編號'
+    );
+  }
+
+  if (payloadProjectId !== budgetProjectId) {
+    throw createApiError(
+      'VALIDATION_ERROR',
+      '請款專案編號與預算項目所屬專案不符'
+    );
   }
 
   // 2. 廠商指定關聯驗證 (若項目有指定廠商)
@@ -531,7 +549,7 @@ function handleSaveForm(payload) {
         lock.waitLock(30000);
       }
     } catch (lockErr) {
-      throw createApiError('SERVER_ERROR', '預算資料庫忙碌中，請稍候重試');
+      throw createApiError('INTERNAL_ERROR', '預算資料庫忙碌中，請稍候重試');
     }
   }
 

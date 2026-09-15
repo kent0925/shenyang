@@ -262,6 +262,13 @@ export const PaymentRequestForm: React.FC<Props> = ({
       vendor: newVendor,
       vendorId: shouldClearVendorId ? '' : data.vendorId,
     };
+
+    // Fix 2: 手動修改 Vendor 名稱時若清除了 vendorId，且當前 selectedBudgetItem 有指定 vendorId，一併清除 BudgetItem 關聯
+    if (shouldClearVendorId && selectedBudgetItem && selectedBudgetItem.vendorId && selectedBudgetItem.vendorId.trim() !== '') {
+      updates.budgetItemId = '';
+      updates.budgetItemName = '';
+    }
+
     if (data.accountNameSameAsVendor !== false) {
       updates.accountName = newVendor;
       updates.bankAccount = {
@@ -301,6 +308,14 @@ export const PaymentRequestForm: React.FC<Props> = ({
         accountName: v.accountName || v.vendorName,
       },
     };
+
+    // Fix 2: 若當前選定的 BudgetItem 有指定 vendorId 且與新選的 selectedVendorId 不相符，清除 BudgetItem 關聯
+    if (selectedBudgetItem && selectedBudgetItem.vendorId && selectedBudgetItem.vendorId.trim() !== '') {
+      if (selectedBudgetItem.vendorId !== selectedVendorId) {
+        updates.budgetItemId = '';
+        updates.budgetItemName = '';
+      }
+    }
 
     onChange({
       ...data,

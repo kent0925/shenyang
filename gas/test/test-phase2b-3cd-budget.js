@@ -211,6 +211,28 @@ async function runTests() {
   assert(b2Res.ok === false && b2Res.error.code === 'VALIDATION_ERROR', 'B2: 專案 ID 不符時正確拒絕並回傳 VALIDATION_ERROR');
 
   // ----------------------------------------------------
+  // R1: budgeted + budgetItemId + missing projectId 必須拒絕
+  // ----------------------------------------------------
+  console.log('\n【測試 R1：有預算但缺少 projectId 檢查】');
+  const r1Res = callDoPost(gas, {
+    action: 'saveForm',
+    secret: TEST_SHARED_SECRET,
+    payload: {
+      year: 2026,
+      formType: 'payment_request',
+      status: 'submitted',
+      company: '昇陽開發實業股份有限公司',
+      projectId: '', // 故意留空
+      vendorId: testVendorId,
+      budgetType: 'budgeted',
+      budgetItemId: testBudgetItemId,
+      amount: 50000,
+      payloadJson: '{}',
+    },
+  });
+  assert(r1Res.ok === false && r1Res.error.code === 'VALIDATION_ERROR' && r1Res.error.message.includes('有預算請款必須提供專案編號'), 'R1: 有預算但缺少 projectId 正確被拒絕並回傳 VALIDATION_ERROR');
+
+  // ----------------------------------------------------
   // B3: 廠商 ID 與預算項目指定廠商不一致拋出 VALIDATION_ERROR
   // ----------------------------------------------------
   console.log('\n【測試 B3：指定承攬廠商一致性檢查】');
@@ -285,6 +307,35 @@ async function runTests() {
   // ----------------------------------------------------
   assert(lockAcquiredCount > beforeLockAcquired, 'B9.1: 有預算請款儲存調用了 LockService.waitLock');
   assert(lockReleasedCount > beforeLockReleased, 'B9.2: 儲存完畢後釋放了 LockService.releaseLock');
+
+  // ----------------------------------------------------
+  // R5: LockService 逾時/失敗回傳 INTERNAL_ERROR
+  // ----------------------------------------------------
+  console.log('\n【測試 R5：LockService 異常錯誤碼合約檢核】');
+  const normalLockGetter = env.LockService.getScriptLock;
+  env.LockService.getScriptLock = () => ({
+    waitLock: () => { throw new Error('Lock timeout'); },
+    releaseLock: () => {},
+  });
+
+  const r5Res = callDoPost(gas, {
+    action: 'saveForm',
+    secret: TEST_SHARED_SECRET,
+    payload: {
+      year: 2026,
+      formType: 'payment_request',
+      status: 'submitted',
+      company: '昇陽開發實業股份有限公司',
+      projectId: testProjectId,
+      vendorId: testVendorId,
+      budgetType: 'budgeted',
+      budgetItemId: testBudgetItemId,
+      amount: 10000,
+      payloadJson: '{}',
+    },
+  });
+  assert(r5Res.ok === false && r5Res.error.code === 'INTERNAL_ERROR', 'R5: LockService 失敗時正確回傳 INTERNAL_ERROR');
+  env.LockService.getScriptLock = normalLockGetter;
 
   // ----------------------------------------------------
   // B6: 超出預算上限時拋出 VALIDATION_ERROR
