@@ -114,3 +114,28 @@ npm run build
 - **Framework Preset**: `Vite`
 - **Build Command**: `npm run build`
 - **Output Directory**: `dist`
+
+---
+
+## 伺服器環境變數設定 (Vercel Serverless)
+
+本專案後端 Proxy (`/api/backend`) 與授權邊界需要以下 **Server-Only** 環境變數：
+
+```text
+# GAS 後端轉發憑證 (Server-Only)
+GAS_WEB_APP_URL=<server-only-gas-url>
+GAS_API_SHARED_SECRET=<server-only-shared-secret>
+
+# 內部自動化／測試金鑰 (Server-Only)
+BACKEND_PROXY_TOKEN=<server-only-internal-token>
+
+# 前端共享解鎖密碼 (Server-Only，內部使用者進入系統時輸入)
+APP_ACCESS_PASSWORD=<server-only-secret>
+
+# Session Token 簽署密鑰 (Server-Only，HMAC-SHA256 簽名用)
+SESSION_SIGNING_SECRET=<server-only-random-secret>
+```
+
+> **資安重要規範**：
+> - 以上變數均為 **Server-Side 專用**，**嚴禁使用 `VITE_` 前綴**。
+> - 任何金鑰、Token 與密碼均不可暴露至前端 Browser Bundle 或進入任何客戶端程式碼中。

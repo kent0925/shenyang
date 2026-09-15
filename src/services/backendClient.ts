@@ -55,6 +55,7 @@ export class BackendApiError extends Error {
  */
 const SAFE_ERROR_MESSAGES: Record<string, string> = {
   UNAUTHORIZED: '存取未授權或無存取憑證，請確認權限或重新整理頁面。',
+  FORBIDDEN: '拒絕跨來源存取請求或存取權限不足。',
   VALIDATION_ERROR: '資料格式或必填欄位驗證失敗，請檢查輸入內容。',
   NOT_FOUND: '找不到指定的資料項目或資料表。',
   UNKNOWN_ACTION: '不支援的後端操作請求。',
@@ -101,6 +102,7 @@ export async function sendBackendRequest<T, P extends object = object>(
   try {
     response = await fetch('/api/backend', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
       },
@@ -133,7 +135,8 @@ export async function sendBackendRequest<T, P extends object = object>(
   }
 
   // 失敗回應處理
-  const errorCode = jsonResult?.error?.code || (response.status === 401 ? 'UNAUTHORIZED' : 'HTTP_ERROR');
+  const defaultCode = response.status === 401 ? 'UNAUTHORIZED' : (response.status === 403 ? 'FORBIDDEN' : 'HTTP_ERROR');
+  const errorCode = jsonResult?.error?.code || defaultCode;
   const rawErrorMessage = jsonResult?.error?.message;
   const safeMessage = resolveSafeMessage(errorCode, rawErrorMessage);
 

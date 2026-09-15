@@ -178,3 +178,15 @@ export interface BackendHealthData {
   schemaVersion: string;
   currentYear: string;
 }
+
+// ==========================================
+// 6. 瀏覽器端 Session 驗證 (Auth)
+// ==========================================
+
+export interface SessionStatusData {
+  authenticated: boolean;
+}
+
+export interface SessionLoginPayload {
+  password: string;
+}

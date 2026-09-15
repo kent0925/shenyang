@@ -14,8 +14,9 @@ import { generatePdfFromElement } from './generators/pdf/pdfHelper';
 import { getSealApprovalBaseFilename, getPaymentRequestBaseFilename } from './utils/filename';
 import { validateTaxId } from './services/companyLookup';
 import { Eye, FileSpreadsheet, FileText, Download, Loader2, CheckCircle2 } from 'lucide-react';
+import { AccessGate } from './components/auth/AccessGate';
 
-export const App: React.FC = () => {
+const MainApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<FormTab>('seal');
   const [sealData, setSealData] = useState<SealApprovalData>(INITIAL_SEAL_APPROVAL_DATA);
   const [paymentData, setPaymentData] = useState<PaymentRequestData>(INITIAL_PAYMENT_REQUEST_DATA);
@@ -280,6 +281,14 @@ export const App: React.FC = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <AccessGate>
+      <MainApp />
+    </AccessGate>
   );
 };
 
