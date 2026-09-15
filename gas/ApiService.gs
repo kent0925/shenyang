@@ -413,6 +413,102 @@ function handleGetForm(payload) {
   return rowToObject(SHEETS.FORMS, rowValues);
 }
 
+/**
+ * 伺服器端請款預算權威檢查函式
+ *
+ * 驗證項目：
+ * 1. BudgetItem 存在性 (找不到拋 NOT_FOUND)
+ * 2. Relationship 一致性：payload.projectId 必須與 budgetItem.projectId 一致 (拋 VALIDATION_ERROR)
+ * 3. BudgetItem 若指定 vendorId，payload.vendorId 必須一致 (拋 VALIDATION_ERROR)
+ * 4. 金額合法性：payload.amount 必須為有限數字且 >= 0 (拋 VALIDATION_ERROR)
+ * 5. 額度檢核：加總同年度 submitted/approved 請款 (排除 excludeFormId)，usedOther + requestedAmount <= effectiveBudget
+ *
+ * @param {number} year 預算年度
+ * @param {Object} payload 儲存表單 payload
+ * @param {string} [excludeFormId] 更新表單時需排除的 formId
+ */
+function validatePaymentBudget(year, payload, excludeFormId) {
+  var budgetItemId = payload.budgetItemId ? String(payload.budgetItemId).trim() : '';
+  if (!budgetItemId) return;
+
+  var yearSs = getYearDatabase(year);
+  if (!yearSs) {
+    throw createApiError('NOT_FOUND', '找不到該年度預算資料庫: ' + year);
+  }
+
+  var budgetSheet = yearSs.getSheetByName(SHEETS.BUDGET_ITEMS);
+  if (!budgetSheet) {
+    throw createApiError('NOT_FOUND', '找不到預算項目工作表');
+  }
+
+  var budgetRowIndex = findRowIndexById(budgetSheet, budgetItemId);
+  if (budgetRowIndex === -1) {
+    throw createApiError('NOT_FOUND', '找不到預算項目: ' + budgetItemId);
+  }
+
+  var numCols = SCHEMAS[SHEETS.BUDGET_ITEMS].columns.length;
+  var budgetRowValues = budgetSheet.getRange(budgetRowIndex, 1, 1, numCols).getValues()[0];
+  var budgetItem = rowToObject(SHEETS.BUDGET_ITEMS, budgetRowValues);
+
+  // 1. 專案關聯驗證
+  if (payload.projectId && String(payload.projectId).trim() !== String(budgetItem.projectId).trim()) {
+    throw createApiError('VALIDATION_ERROR', '請款專案編號與預算項目所屬專案不符');
+  }
+
+  // 2. 廠商指定關聯驗證 (若項目有指定廠商)
+  if (budgetItem.vendorId && String(budgetItem.vendorId).trim() !== '') {
+    if (!payload.vendorId || String(payload.vendorId).trim() !== String(budgetItem.vendorId).trim()) {
+      throw createApiError('VALIDATION_ERROR', '請款廠商與預算項目指定承攬廠商不符');
+    }
+  }
+
+  // 3. 請求金額驗證
+  var requestedAmount = Number(payload.amount);
+  if (isNaN(requestedAmount) || !isFinite(requestedAmount) || requestedAmount < 0) {
+    throw createApiError('VALIDATION_ERROR', '請款金額必須為大於或等於 0 的有效數值');
+  }
+
+  // 4. 計算預算有效額度
+  var bAmount = Number(budgetItem.budgetAmount) || 0;
+  var tAmount = Number(budgetItem.terminatedAmount) || 0;
+  var effectiveBudget = Math.max(0, bAmount - tAmount);
+
+  // 5. 掃描同年度表單加總已消耗預算
+  var formsSheet = yearSs.getSheetByName(SHEETS.FORMS);
+  var usedOther = 0;
+
+  if (formsSheet && formsSheet.getLastRow() > 1) {
+    var formCols = SCHEMAS[SHEETS.FORMS].columns.length;
+    var formRows = formsSheet.getRange(2, 1, formsSheet.getLastRow() - 1, formCols).getValues();
+
+    for (var i = 0; i < formRows.length; i++) {
+      var f = rowToObject(SHEETS.FORMS, formRows[i]);
+      if (f.formType !== 'payment_request') continue;
+      if (String(f.budgetItemId).trim() !== budgetItemId) continue;
+
+      var st = (f.status || '').toLowerCase();
+      if (st !== 'submitted' && st !== 'approved') continue;
+
+      // 核心防線：排除自己 (編輯既有表單時)
+      if (excludeFormId && String(f.formId).trim() === String(excludeFormId).trim()) continue;
+
+      var amt = Number(f.amount);
+      if (isFinite(amt) && amt > 0) {
+        usedOther += amt;
+      }
+    }
+  }
+
+  // 6. 額度上限超額判定
+  if (usedOther + requestedAmount > effectiveBudget) {
+    var remaining = effectiveBudget - usedOther;
+    throw createApiError(
+      'VALIDATION_ERROR',
+      '本次請款將超過可用預算（有效預算: ' + effectiveBudget + '，已請款: ' + usedOther + '，可用餘額: ' + remaining + '，本次請款: ' + requestedAmount + '）'
+    );
+  }
+}
+
 function handleSaveForm(payload) {
   if (!payload) throw createApiError('VALIDATION_ERROR', '缺少請求內容 (payload)');
   if (!payload.formType || (payload.formType !== 'payment_request' && payload.formType !== 'seal_approval')) {
@@ -423,9 +519,30 @@ function handleSaveForm(payload) {
   }
 
   var year = payload.year ? parseInt(payload.year, 10) : getCurrentYear();
-  var yearSs = getYearDatabase(year) || createYearDatabase(year);
-  var sheet = yearSs.getSheetByName(SHEETS.FORMS);
   var formId = payload.formId ? String(payload.formId).trim() : '';
+  var isBudgetedPayment = (payload.formType === 'payment_request' && payload.budgetType === 'budgeted' && payload.budgetItemId);
+
+  // Concurrency 防線：針對有預算之請款單儲存，使用 LockService 避免併發超額
+  var lock = null;
+  if (isBudgetedPayment && typeof LockService !== 'undefined' && LockService.getScriptLock) {
+    try {
+      lock = LockService.getScriptLock();
+      if (lock) {
+        lock.waitLock(30000);
+      }
+    } catch (lockErr) {
+      throw createApiError('SERVER_ERROR', '預算資料庫忙碌中，請稍候重試');
+    }
+  }
+
+  try {
+    // 執行伺服器端預算權威驗證
+    if (isBudgetedPayment) {
+      validatePaymentBudget(year, payload, formId || undefined);
+    }
+
+    var yearSs = getYearDatabase(year) || createYearDatabase(year);
+    var sheet = yearSs.getSheetByName(SHEETS.FORMS);
 
   // 安全轉換 payloadJson，防止 [object Object] 寫入
   var payloadJsonStr = '';
@@ -508,5 +625,14 @@ function handleSaveForm(payload) {
     var newRow = objectToRow(SHEETS.FORMS, newFormObj);
     sheet.appendRow(newRow);
     return newFormObj;
+  }
+  } finally {
+    if (lock) {
+      try {
+        lock.releaseLock();
+      } catch (relErr) {
+        // 忽略 release 鎖之次要異常
+      }
+    }
   }
 }
