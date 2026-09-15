@@ -3,6 +3,7 @@ import { Header } from './components/layout/Header';
 import { TabNav, FormTab } from './components/layout/TabNav';
 import { SealApprovalForm } from './components/forms/SealApprovalForm';
 import { PaymentRequestForm } from './components/forms/PaymentRequestForm';
+import { MasterDataPanel } from './components/master-data/MasterDataPanel';
 import { PreviewModal } from './components/preview/PreviewModal';
 import { SealApprovalView } from './components/preview/SealApprovalView';
 import { PaymentRequestView } from './components/preview/PaymentRequestView';
@@ -49,7 +50,7 @@ const MainApp: React.FC = () => {
       if (!sealData.applyDate) newErrors.applyDate = '請選擇申請日期';
       if (!sealData.subject.trim()) newErrors.subject = '請填寫主旨';
       if (sealData.types.length === 0) newErrors.types = '請至少選擇一種申請類型';
-    } else {
+    } else if (activeTab === 'payment') {
       if (!paymentData.company.trim()) newErrors.company = '請選擇或填寫公司名稱';
       if (!paymentData.applyDate) newErrors.applyDate = '請選擇申請日期';
       if (!paymentData.vendor.trim()) newErrors.vendor = '請填寫受款人／廠商';
@@ -83,7 +84,7 @@ const MainApp: React.FC = () => {
         const blob = await generateSealApprovalExcel(sealData);
         const baseName = getSealApprovalBaseFilename(sealData.subject, sealData.applyDate, sealData.types);
         downloadBlob(blob, `${baseName}.xlsm`);
-      } else {
+      } else if (activeTab === 'payment') {
         const blob = await generatePaymentRequestExcel(paymentData);
         const baseName = getPaymentRequestBaseFilename(paymentData.project, paymentData.vendor, paymentData.applyDate);
         downloadBlob(blob, `${baseName}.xlsx`);
@@ -111,7 +112,7 @@ const MainApp: React.FC = () => {
         const baseName = getSealApprovalBaseFilename(sealData.subject, sealData.applyDate, sealData.types);
         const blob = await generatePdfFromElement(el, `${baseName}.pdf`);
         downloadBlob(blob, `${baseName}.pdf`);
-      } else {
+      } else if (activeTab === 'payment') {
         const el = document.getElementById('hidden-payment-view');
         if (!el) throw new Error('找不到列印渲染容器');
         const baseName = getPaymentRequestBaseFilename(paymentData.project, paymentData.vendor, paymentData.applyDate);
@@ -145,7 +146,7 @@ const MainApp: React.FC = () => {
           const pdfBlob = await generatePdfFromElement(el, `${baseName}.pdf`);
           downloadBlob(pdfBlob, `${baseName}.pdf`);
         }
-      } else {
+      } else if (activeTab === 'payment') {
         const baseName = getPaymentRequestBaseFilename(paymentData.project, paymentData.vendor, paymentData.applyDate);
         const excelBlob = await generatePaymentRequestExcel(paymentData);
         downloadBlob(excelBlob, `${baseName}.xlsx`);
@@ -170,28 +171,32 @@ const MainApp: React.FC = () => {
     <div className="min-h-screen flex flex-col bg-slate-100">
       <Header />
 
-      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 mb-20">
+      <main className={`flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 ${activeTab === 'master' ? 'mb-8' : 'mb-20'}`}>
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          {/* 表單頁籤切換 */}
+          {/* 表單／主檔頁籤切換 */}
           <TabNav activeTab={activeTab} onChange={(tab) => {
             setActiveTab(tab);
             setErrors({});
           }} />
 
-          {/* 表單填寫區 */}
+          {/* 表單填寫區 或 主檔管理區 */}
           <div className="p-6 sm:p-8">
-            {activeTab === 'seal' ? (
+            {activeTab === 'seal' && (
               <SealApprovalForm
                 data={sealData}
                 onChange={setSealData}
                 errors={errors}
               />
-            ) : (
+            )}
+            {activeTab === 'payment' && (
               <PaymentRequestForm
                 data={paymentData}
                 onChange={setPaymentData}
                 errors={errors}
               />
+            )}
+            {activeTab === 'master' && (
+              <MasterDataPanel />
             )}
           </div>
         </div>
@@ -209,62 +214,64 @@ const MainApp: React.FC = () => {
         </div>
       )}
 
-      {/* 底部固定操作欄 (ActionBar) */}
-      <footer className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 py-3 px-4 shadow-lg">
-        <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="text-xs text-slate-500 hidden sm:block">
-            {activeTab === 'seal' ? '用印／簽呈表單' : '請款單表單'}・下載前將自動檢查必填項目
+      {/* 底部固定操作欄 (ActionBar：僅在表單分頁顯示) */}
+      {activeTab !== 'master' && (
+        <footer className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 py-3 px-4 shadow-lg">
+          <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs text-slate-500 hidden sm:block">
+              {activeTab === 'seal' ? '用印／簽呈表單' : '請款單表單'}・下載前將自動檢查必填項目
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                onClick={handlePreview}
+                disabled={isProcessing}
+                className="flex items-center gap-1.5 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-medium transition active:scale-95 disabled:opacity-50"
+              >
+                <Eye className="w-4 h-4 text-slate-600" />
+                <span>預覽</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadExcel}
+                disabled={isProcessing}
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition shadow-sm active:scale-95 disabled:opacity-50"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>下載 Excel</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={isProcessing}
+                className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-medium transition shadow-sm active:scale-95 disabled:opacity-50"
+              >
+                <FileText className="w-4 h-4" />
+                <span>下載 PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadBoth}
+                disabled={isProcessing}
+                className="flex items-center gap-1.5 px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-sm font-semibold transition shadow-md active:scale-95 disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                <span>Excel + PDF</span>
+              </button>
+            </div>
           </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            <button
-              type="button"
-              onClick={handlePreview}
-              disabled={isProcessing}
-              className="flex items-center gap-1.5 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-medium transition active:scale-95 disabled:opacity-50"
-            >
-              <Eye className="w-4 h-4 text-slate-600" />
-              <span>預覽</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadExcel}
-              disabled={isProcessing}
-              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition shadow-sm active:scale-95 disabled:opacity-50"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>下載 Excel</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={isProcessing}
-              className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-medium transition shadow-sm active:scale-95 disabled:opacity-50"
-            >
-              <FileText className="w-4 h-4" />
-              <span>下載 PDF</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadBoth}
-              disabled={isProcessing}
-              className="flex items-center gap-1.5 px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-sm font-semibold transition shadow-md active:scale-95 disabled:opacity-50"
-            >
-              <Download className="w-4 h-4" />
-              <span>Excel + PDF</span>
-            </button>
-          </div>
-        </div>
-      </footer>
+        </footer>
+      )}
 
       {/* 彈窗預覽 */}
       <PreviewModal
         isOpen={isPreviewOpen}
         onClose={() => setIsPreviewOpen(false)}
-        type={activeTab}
+        type={activeTab === 'payment' ? 'payment' : 'seal'}
         sealData={sealData}
         paymentData={paymentData}
         onDownloadExcel={handleDownloadExcel}

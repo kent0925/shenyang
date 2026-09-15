@@ -1,7 +1,7 @@
-﻿import React from 'react';
-import { Stamp, Receipt } from 'lucide-react';
+import React from 'react';
+import { Stamp, Receipt, Database } from 'lucide-react';
 
-export type FormTab = 'seal' | 'payment';
+export type FormTab = 'seal' | 'payment' | 'master';
 
 interface Props {
   activeTab: FormTab;
@@ -35,6 +35,19 @@ export const TabNav: React.FC<Props> = ({ activeTab, onChange }) => {
       >
         <Receipt className="w-4 h-4" />
         <span>請款單</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => onChange('master')}
+        className={`flex items-center gap-2 px-5 py-2.5 font-medium text-sm transition-colors border-b-2 -mb-px ${
+          activeTab === 'master'
+            ? 'border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg'
+            : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-t-lg'
+        }`}
+      >
+        <Database className="w-4 h-4" />
+        <span>主檔管理</span>
       </button>
     </div>
   );
