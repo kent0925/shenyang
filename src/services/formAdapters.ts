@@ -120,11 +120,14 @@ export function deserializeSealApproval(record: FormRecord): SealApprovalData {
  * - year: 提取自 paymentData.applyDate (例如 2026)
  * - formType: 'payment_request'
  * - formId: 若為已載入既有表單則帶入，新建則為 undefined
+ * - projectId: paymentData.projectId (若有)
  * - projectName: paymentData.project
+ * - vendorId: paymentData.vendorId (若有)
  * - vendorName: paymentData.vendor
  * - vendorTaxId: paymentData.vendorTaxId
  * - amount: parseSafeAmount(paymentData.currentAmount)
- * - budgetType: 'budgeted' (預設)
+ * - budgetType: paymentData.budgetType || 'budgeted'
+ * - budgetItemId: paymentData.budgetItemId (若有)
  * - payloadJson: JSON.stringify(paymentData)
  */
 export function serializePaymentRequest(data: PaymentRequestData, formId?: string): SaveFormPayload {
@@ -135,11 +138,14 @@ export function serializePaymentRequest(data: PaymentRequestData, formId?: strin
     formType: 'payment_request',
     company: data.company.trim(),
     year,
+    projectId: data.projectId ? data.projectId.trim() : undefined,
     projectName: data.project ? data.project.trim() : undefined,
+    vendorId: data.vendorId ? data.vendorId.trim() : undefined,
     vendorName: data.vendor ? data.vendor.trim() : undefined,
     vendorTaxId: data.vendorTaxId ? data.vendorTaxId.trim() : undefined,
     amount,
-    budgetType: 'budgeted',
+    budgetType: data.budgetType || 'budgeted',
+    budgetItemId: data.budgetItemId ? data.budgetItemId.trim() : undefined,
     status: 'submitted',
     payloadJson: JSON.stringify(data),
   };
@@ -153,6 +159,10 @@ export function serializePaymentRequest(data: PaymentRequestData, formId?: strin
 
 /**
  * 將後端 FormRecord 安全還原為 PaymentRequestData
+ *
+ * 向後相容規則：
+ * 1. 新資料：完整還原 projectId, vendorId, budgetType, budgetItemId, budgetItemName。
+ * 2. 舊資料：若無 budgetItemId，自動視為 unbudgeted，避免歷史表單因缺少 budgetItemId 無法開啟。
  */
 export function deserializePaymentRequest(record: FormRecord): PaymentRequestData {
   if (record.formType !== 'payment_request') {
@@ -172,14 +182,28 @@ export function deserializePaymentRequest(record: FormRecord): PaymentRequestDat
       throw new Error('表單資料格式無效');
     }
 
+    const resolvedBudgetItemId = raw.budgetItemId || record.budgetItemId || '';
+    // 若無 budgetItemId 且未明確指定，向後相容設為 unbudgeted
+    const resolvedBudgetType: 'budgeted' | 'unbudgeted' =
+      raw.budgetType === 'unbudgeted'
+        ? 'unbudgeted'
+        : resolvedBudgetItemId
+        ? 'budgeted'
+        : 'unbudgeted';
+
     // 與 INITIAL_PAYMENT_REQUEST_DATA 進行深層合併保護
     return {
       ...INITIAL_PAYMENT_REQUEST_DATA,
       ...raw,
       company: raw.company || record.company || INITIAL_PAYMENT_REQUEST_DATA.company,
+      projectId: raw.projectId || record.projectId || '',
       project: raw.project || record.projectName || '',
+      vendorId: raw.vendorId || record.vendorId || '',
       vendor: raw.vendor || record.vendorName || '',
       vendorTaxId: raw.vendorTaxId || record.vendorTaxId || '',
+      budgetType: resolvedBudgetType,
+      budgetItemId: resolvedBudgetItemId,
+      budgetItemName: raw.budgetItemName || '',
       bankAccount: {
         ...INITIAL_PAYMENT_REQUEST_DATA.bankAccount,
         ...(raw.bankAccount || {}),

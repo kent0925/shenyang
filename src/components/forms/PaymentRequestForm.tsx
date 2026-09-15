@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PaymentRequestData } from '../../models/paymentRequest';
 import { DEFAULT_COMPANIES } from '../../models/sealApproval';
+import type { Project, Vendor, BudgetItem, FormRecord } from '../../models/backend';
+import { backendStorageService } from '../../services/backendStorage';
+import { calculateBudgetUsage, BudgetUsageSummary } from '../../services/budgetUsage';
 import {
   AlertCircle,
   Calendar,
@@ -13,6 +16,8 @@ import {
   Landmark,
   AlertTriangle,
   RotateCw,
+  Wallet,
+  Sparkles,
 } from 'lucide-react';
 import { calculatePayableAmount, formatCurrency } from '../../utils/format';
 import { validateTaxId, lookupCompanyByTaxId } from '../../services/companyLookup';
@@ -27,9 +32,17 @@ interface Props {
   data: PaymentRequestData;
   onChange: (data: PaymentRequestData) => void;
   errors: Record<string, string>;
+  currentFormId?: string;
+  onOverBudgetChange?: (isOver: boolean) => void;
 }
 
-export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) => {
+export const PaymentRequestForm: React.FC<Props> = ({
+  data,
+  onChange,
+  errors,
+  currentFormId,
+  onOverBudgetChange,
+}) => {
   const [banks, setBanks] = useState<FinancialInstitution[]>([]);
   const [isSearchingCompany, setIsSearchingCompany] = useState(false);
   const [companySearchMsg, setCompanySearchMsg] = useState<{
@@ -37,16 +50,113 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
     text: string;
   } | null>(null);
 
+  // 主檔資料狀態
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([]);
+  const [projectForms, setProjectForms] = useState<FormRecord[]>([]);
+  const [isLoadingMaster, setIsLoadingMaster] = useState(false);
+  const [isLoadingBudget, setIsLoadingBudget] = useState(false);
+  const [isManualProjectMode, setIsManualProjectMode] = useState<boolean>(!data.projectId && !!data.project);
+
   const lastQueriedTaxIdRef = useRef<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // 初始化載入銀行清單與主檔 (專案、廠商)
   useEffect(() => {
     loadBanks()
       .then(setBanks)
       .catch((err) => {
         console.warn('載入金融機構資料失敗:', err);
       });
+
+    setIsLoadingMaster(true);
+    Promise.all([
+      backendStorageService.listProjects().catch(() => [] as Project[]),
+      backendStorageService.listVendors().catch(() => [] as Vendor[]),
+    ])
+      .then(([projList, vendList]) => {
+        setProjects(projList);
+        setVendors(vendList);
+      })
+      .finally(() => {
+        setIsLoadingMaster(false);
+      });
   }, []);
+
+  // 當前年度判斷
+  const currentYear = useMemo(() => {
+    if (data.applyDate) {
+      const parsed = parseInt(data.applyDate.split('-')[0], 10);
+      if (Number.isFinite(parsed) && parsed > 1900) return parsed;
+    }
+    return new Date().getFullYear();
+  }, [data.applyDate]);
+
+  // 依公司篩選專案清單
+  const filteredProjects = useMemo(() => {
+    if (!data.company) return projects;
+    return projects.filter((p) => !p.company || p.company === data.company);
+  }, [projects, data.company]);
+
+  // 當 projectId 或年度變更時載入預算項目與請款紀錄
+  useEffect(() => {
+    if (!data.projectId) {
+      setBudgetItems([]);
+      setProjectForms([]);
+      return;
+    }
+
+    setIsLoadingBudget(true);
+    Promise.all([
+      backendStorageService.listBudgetItems({ year: currentYear, projectId: data.projectId }).catch(() => [] as BudgetItem[]),
+      backendStorageService.listForms({ year: currentYear, formType: 'payment_request', projectId: data.projectId }).catch(() => [] as FormRecord[]),
+    ])
+      .then(([items, forms]) => {
+        setBudgetItems(items);
+        setProjectForms(forms);
+      })
+      .finally(() => {
+        setIsLoadingBudget(false);
+      });
+  }, [data.projectId, currentYear]);
+
+  // 選取的預算項目
+  const selectedBudgetItem = useMemo(() => {
+    if (!data.budgetItemId) return undefined;
+    return budgetItems.find((b) => b.budgetItemId === data.budgetItemId);
+  }, [budgetItems, data.budgetItemId]);
+
+  // 新表單只能選 active 預算項目；既有表單若已連結 closed 項目仍保留顯示。
+  const selectableBudgetItems = useMemo(() => {
+    return budgetItems.filter(
+      (item) => item.status === 'active' || item.budgetItemId === data.budgetItemId
+    );
+  }, [budgetItems, data.budgetItemId]);
+
+  // 預算使用計算
+  const budgetUsage: BudgetUsageSummary | null = useMemo(() => {
+    if (data.budgetType === 'unbudgeted' || !data.budgetItemId || !selectedBudgetItem) {
+      return null;
+    }
+    return calculateBudgetUsage({
+      budgetAmount: selectedBudgetItem.budgetAmount,
+      terminatedAmount: selectedBudgetItem.terminatedAmount,
+      forms: projectForms,
+      selectedBudgetItemId: data.budgetItemId,
+      currentFormId,
+      currentAmount: data.currentAmount,
+    });
+  }, [data.budgetType, data.budgetItemId, selectedBudgetItem, projectForms, currentFormId, data.currentAmount]);
+
+  // 即時通知超額狀態
+  useEffect(() => {
+    if (data.budgetType === 'unbudgeted' || !data.budgetItemId || !budgetUsage) {
+      onOverBudgetChange?.(false);
+    } else {
+      onOverBudgetChange?.(budgetUsage.isOverBudget);
+    }
+  }, [budgetUsage, data.budgetType, data.budgetItemId, onOverBudgetChange]);
 
   const taxIdValue = (data.vendorTaxId || '').trim();
   const isTaxIdValid = validateTaxId(taxIdValue);
@@ -150,10 +260,22 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
     performTaxIdLookup(taxIdValue, true);
   };
 
+  // 手動編輯受款人名稱（若更動則清除已關聯的 vendorId，轉為手動受款人）
   const handleVendorChange = (newVendor: string) => {
+    const matchedVendor = vendors.find((v) => v.vendorId === data.vendorId);
+    const shouldClearVendorId = matchedVendor && matchedVendor.vendorName !== newVendor;
+
     const updates: Partial<PaymentRequestData> = {
       vendor: newVendor,
+      vendorId: shouldClearVendorId ? '' : data.vendorId,
     };
+
+    // Fix 2: 手動修改 Vendor 名稱時若清除了 vendorId，且當前 selectedBudgetItem 有指定 vendorId，一併清除 BudgetItem 關聯
+    if (shouldClearVendorId && selectedBudgetItem && selectedBudgetItem.vendorId && selectedBudgetItem.vendorId.trim() !== '') {
+      updates.budgetItemId = '';
+      updates.budgetItemName = '';
+    }
+
     if (data.accountNameSameAsVendor !== false) {
       updates.accountName = newVendor;
       updates.bankAccount = {
@@ -161,6 +283,47 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
         accountName: newVendor,
       };
     }
+    onChange({
+      ...data,
+      ...updates,
+    });
+  };
+
+  // 從廠商主檔快速帶入 (字串維持保留前導 0)
+  const handleSelectVendorFromMaster = (selectedVendorId: string) => {
+    if (!selectedVendorId) return;
+    const v = vendors.find((vend) => vend.vendorId === selectedVendorId);
+    if (!v) return;
+
+    const updates: Partial<PaymentRequestData> = {
+      vendorId: v.vendorId,
+      vendor: v.vendorName,
+      vendorTaxId: v.taxId || '',
+      bankCode: v.bankCode || '',
+      bankName: v.bankName || '',
+      branchCode: v.branchCode || '',
+      branchName: v.branchName || '',
+      accountNumber: v.accountNumber || '',
+      accountName: v.accountName || v.vendorName,
+      accountNameSameAsVendor: true,
+      bankAccount: {
+        type: 'code',
+        bankCode: v.bankCode || '',
+        bankName: v.bankName || '',
+        branch: v.branchName || v.branchCode || '',
+        accountNumber: v.accountNumber || '',
+        accountName: v.accountName || v.vendorName,
+      },
+    };
+
+    // Fix 2: 若當前選定的 BudgetItem 有指定 vendorId 且與新選的 selectedVendorId 不相符，清除 BudgetItem 關聯
+    if (selectedBudgetItem && selectedBudgetItem.vendorId && selectedBudgetItem.vendorId.trim() !== '') {
+      if (selectedBudgetItem.vendorId !== selectedVendorId) {
+        updates.budgetItemId = '';
+        updates.budgetItemName = '';
+      }
+    }
+
     onChange({
       ...data,
       ...updates,
@@ -333,9 +496,17 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
     <div className="space-y-6">
       {/* 區塊一：基本與案件資訊 */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-        <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-          <Building2 className="w-4 h-4 text-blue-600" />
-          <span>基本與案件資訊</span>
+        <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-blue-600" />
+            <span>基本與案件資訊</span>
+          </div>
+          {isLoadingMaster && (
+            <span className="text-xs text-blue-600 flex items-center gap-1">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              載入主檔資料中…
+            </span>
+          )}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* 公司名稱 */}
@@ -346,11 +517,17 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
             <select
               value={DEFAULT_COMPANIES.includes(data.company) ? data.company : 'custom'}
               onChange={(e) => {
-                if (e.target.value === 'custom') {
-                  onChange({ ...data, company: '' });
-                } else {
-                  onChange({ ...data, company: e.target.value });
-                }
+                const newCompany = e.target.value === 'custom' ? '' : e.target.value;
+                // 更換公司時，連動清除專案與預算關聯
+                onChange({
+                  ...data,
+                  company: newCompany,
+                  project: '',
+                  projectId: '',
+                  budgetItemId: '',
+                  budgetItemName: '',
+                });
+                setIsManualProjectMode(false);
               }}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
             >
@@ -388,18 +565,83 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
             {errors.applyDate && <p className="text-xs text-red-500 mt-1">{errors.applyDate}</p>}
           </div>
 
-          {/* 專案代號/名稱 */}
+          {/* 專案代號/名稱 (連動專案主檔) */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              專案代號／名稱（選填）
-            </label>
-            <input
-              type="text"
-              placeholder="例如：台北A案（無專案時留空）"
-              value={data.project}
-              onChange={(e) => onChange({ ...data, project: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
-            />
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-slate-700">
+                專案名稱／代號 <span className="text-red-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextMode = !isManualProjectMode;
+                  setIsManualProjectMode(nextMode);
+                  if (nextMode) {
+                    onChange({
+                      ...data,
+                      projectId: '',
+                      budgetItemId: '',
+                      budgetItemName: '',
+                    });
+                  }
+                }}
+                className="text-[11px] text-blue-600 hover:text-blue-800 underline cursor-pointer"
+              >
+                {isManualProjectMode ? '從專案主檔選取' : '手動自訂專案'}
+              </button>
+            </div>
+
+            {isManualProjectMode ? (
+              <input
+                type="text"
+                placeholder="請輸入自訂專案名稱"
+                value={data.project}
+                onChange={(e) =>
+                  onChange({
+                    ...data,
+                    project: e.target.value,
+                    projectId: '',
+                    budgetItemId: '',
+                    budgetItemName: '',
+                  })
+                }
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+              />
+            ) : (
+              <select
+                value={data.projectId || ''}
+                onChange={(e) => {
+                  const pid = e.target.value;
+                  if (!pid) {
+                    onChange({
+                      ...data,
+                      projectId: '',
+                      project: '',
+                      budgetItemId: '',
+                      budgetItemName: '',
+                    });
+                  } else {
+                    const matched = projects.find((p) => p.projectId === pid);
+                    onChange({
+                      ...data,
+                      projectId: pid,
+                      project: matched ? matched.projectName : data.project,
+                      budgetItemId: '',
+                      budgetItemName: '',
+                    });
+                  }
+                }}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">-- 請選擇專案主檔 ({filteredProjects.length} 案) --</option>
+                {filteredProjects.map((p) => (
+                  <option key={p.projectId} value={p.projectId}>
+                    {p.projectName} {p.status !== 'active' ? '(已封存)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+            {errors.project && <p className="text-xs text-red-500 mt-1">{errors.project}</p>}
           </div>
 
           {/* 請購單編號 */}
@@ -444,17 +686,248 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
             />
           </div>
         </div>
+
+        {/* 預算控制配置區 (Budget Type & BudgetItem) */}
+        <div className="mt-4 pt-4 border-t border-slate-200">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+            {/* 預算類型切換 */}
+            <div className="md:col-span-4">
+              <label className="block text-xs font-semibold text-slate-700 mb-2">
+                預算控管類型
+              </label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="budgetType"
+                    value="budgeted"
+                    checked={data.budgetType !== 'unbudgeted'}
+                    onChange={() =>
+                      onChange({
+                        ...data,
+                        budgetType: 'budgeted',
+                      })
+                    }
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="font-medium text-slate-800">有預算</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="budgetType"
+                    value="unbudgeted"
+                    checked={data.budgetType === 'unbudgeted'}
+                    onChange={() =>
+                      onChange({
+                        ...data,
+                        budgetType: 'unbudgeted',
+                        budgetItemId: '',
+                        budgetItemName: '',
+                      })
+                    }
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-slate-600">無預算（非專案/專案外費用）</span>
+                </label>
+              </div>
+            </div>
+
+            {/* 預算項目下拉 (僅在有預算時顯示) */}
+            {data.budgetType !== 'unbudgeted' && (
+              <div className="md:col-span-8">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    預算項目 (年度: {currentYear}) <span className="text-red-500">*</span>
+                  </label>
+                  {isLoadingBudget && (
+                    <span className="text-xs text-blue-600 flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" /> 讀取預算額度中…
+                    </span>
+                  )}
+                </div>
+
+                {!data.projectId ? (
+                  <div className="p-2 bg-slate-100 border border-dashed border-slate-300 rounded-lg text-xs text-slate-500">
+                    請先於上方選擇「專案主檔」，方可載入該專案之預算項目。
+                  </div>
+                ) : (
+                  <select
+                    value={data.budgetItemId || ''}
+                    onChange={(e) => {
+                      const bId = e.target.value;
+                      const matched = budgetItems.find((b) => b.budgetItemId === bId);
+                      const updates: Partial<PaymentRequestData> = {
+                        budgetItemId: bId,
+                        budgetItemName: matched ? matched.itemName : '',
+                      };
+                      // 預算項目指定的廠商是 authoritative relation，選取時一律同步。
+                      if (matched && matched.vendorId) {
+                        const matchedVend = vendors.find((v) => v.vendorId === matched.vendorId);
+                        if (matchedVend) {
+                          updates.vendorId = matchedVend.vendorId;
+                          updates.vendor = matchedVend.vendorName;
+                          updates.vendorTaxId = matchedVend.taxId || '';
+                          updates.bankCode = matchedVend.bankCode || '';
+                          updates.bankName = matchedVend.bankName || '';
+                          updates.branchCode = matchedVend.branchCode || '';
+                          updates.branchName = matchedVend.branchName || '';
+                          updates.accountNumber = matchedVend.accountNumber || '';
+                          updates.accountName = matchedVend.accountName || matchedVend.vendorName;
+                          updates.bankAccount = {
+                            type: 'code',
+                            bankCode: matchedVend.bankCode || '',
+                            bankName: matchedVend.bankName || '',
+                            branch: matchedVend.branchName || matchedVend.branchCode || '',
+                            accountNumber: matchedVend.accountNumber || '',
+                            accountName: matchedVend.accountName || matchedVend.vendorName,
+                          };
+                        }
+                      }
+                      onChange({
+                        ...data,
+                        ...updates,
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="">-- 請選擇預算項目 ({selectableBudgetItems.length} 項) --</option>
+                    {selectableBudgetItems.map((b) => (
+                      <option key={b.budgetItemId} value={b.budgetItemId}>
+                        {b.itemName}（預算額: NT$ {formatCurrency(b.budgetAmount)}
+                        {b.terminatedAmount ? ` / 終止: NT$ ${formatCurrency(b.terminatedAmount)}` : ''}）
+                        {b.status === 'closed' ? ' [已結案]' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {errors.budgetItemId && <p className="text-xs text-red-500 mt-1">{errors.budgetItemId}</p>}
+              </div>
+            )}
+          </div>
+
+          {/* 預算控制即時 Summary 卡片 */}
+          {data.budgetType !== 'unbudgeted' && data.budgetItemId && budgetUsage && (
+            <div
+              className={`mt-4 p-4 rounded-xl border transition-all ${
+                budgetUsage.isOverBudget
+                  ? 'bg-red-50/70 border-red-200'
+                  : 'bg-emerald-50/50 border-emerald-200'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Wallet
+                    className={`w-4 h-4 ${
+                      budgetUsage.isOverBudget ? 'text-red-600' : 'text-emerald-700'
+                    }`}
+                  />
+                  <span className="text-xs font-bold text-slate-800">
+                    預算控管即時審核明細（項目：{data.budgetItemName || selectedBudgetItem?.itemName}）
+                  </span>
+                </div>
+                <div>
+                  {budgetUsage.isOverBudget ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-bold text-red-700 bg-red-100 px-2.5 py-0.5 rounded-full">
+                      <AlertCircle className="w-3.5 h-3.5" /> 超出預算上限
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> 預算額度合規
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* 預算數據網格 */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-slate-500 block">原預算額</span>
+                  <span className="font-bold text-slate-800 font-mono text-sm">
+                    NT$ {formatCurrency(budgetUsage.budgetAmount)}
+                  </span>
+                </div>
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-slate-500 block">終止扣除額</span>
+                  <span className="font-bold text-slate-600 font-mono text-sm">
+                    NT$ {formatCurrency(budgetUsage.terminatedAmount)}
+                  </span>
+                </div>
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-slate-500 block">有效可用預算</span>
+                  <span className="font-bold text-blue-700 font-mono text-sm">
+                    NT$ {formatCurrency(budgetUsage.effectiveBudget)}
+                  </span>
+                </div>
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-slate-500 block">其他已送審/核銷</span>
+                  <span className="font-bold text-slate-700 font-mono text-sm">
+                    NT$ {formatCurrency(budgetUsage.usedOther)}
+                  </span>
+                </div>
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <span className="text-slate-500 block">本次請款金額</span>
+                  <span className="font-bold text-amber-700 font-mono text-sm">
+                    NT$ {formatCurrency(budgetUsage.currentAmount)}
+                  </span>
+                </div>
+                <div
+                  className={`p-2.5 rounded-lg border ${
+                    budgetUsage.isOverBudget
+                      ? 'bg-red-100/50 border-red-300'
+                      : 'bg-white border-slate-200'
+                  }`}
+                >
+                  <span className="text-slate-500 block">本次請款後餘額</span>
+                  <span
+                    className={`font-bold font-mono text-sm ${
+                      budgetUsage.isOverBudget ? 'text-red-700' : 'text-emerald-700'
+                    }`}
+                  >
+                    NT$ {formatCurrency(budgetUsage.remainingAfterCurrent)}
+                  </span>
+                </div>
+              </div>
+
+              {/* 超額警示通知 */}
+              {budgetUsage.isOverBudget && (
+                <div className="mt-3 p-2.5 bg-red-100 border border-red-300 rounded-lg flex items-center gap-2 text-xs text-red-800">
+                  <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                  <span>
+                    <strong>預算超支警示：</strong>本次請款金額已超出剩餘預算額度 NT${' '}
+                    <strong>{formatCurrency(budgetUsage.overAmount)}</strong>，後端將阻擋儲存。請調降請款金額或辦理追加預算。
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 區塊二：受款人與匯款資訊 (N5, N7) */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-        <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
             <Building className="w-4 h-4 text-blue-600" />
-            <span>受款人／廠商與匯款帳號 (N5, N7)</span>
+            <h3 className="text-sm font-bold text-slate-800">受款人／廠商與匯款帳號 (N5, N7)</h3>
           </div>
-          <span className="text-xs text-slate-500 font-normal">純前端本機結構化輸入</span>
-        </h3>
+          {/* 廠商主檔快速帶入選單 */}
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+            <select
+              value={data.vendorId || ''}
+              onChange={(e) => handleSelectVendorFromMaster(e.target.value)}
+              className="px-2.5 py-1 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 focus:ring-2 focus:ring-blue-500 max-w-xs"
+            >
+              <option value="">-- 從廠商主檔快速帶入 (選填) --</option>
+              {vendors.map((v) => (
+                <option key={v.vendorId} value={v.vendorId}>
+                  {v.vendorName} {v.taxId ? `(${v.taxId})` : ''} {!v.isActive ? '(已停用)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         {/* 統一編號與受款人/廠商 (N5) */}
         <div className="p-3 bg-white border border-slate-200 rounded-lg mb-4 space-y-3">
@@ -542,9 +1015,16 @@ export const PaymentRequestForm: React.FC<Props> = ({ data, onChange, errors }) 
 
             {/* 受款人/廠商名稱 (N5) */}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                受款人／廠商名稱 (N5) <span className="text-red-500">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700">
+                  受款人／廠商名稱 (N5) <span className="text-red-500">*</span>
+                </label>
+                {data.vendorId && (
+                  <span className="text-[11px] text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded">
+                    已連結主檔
+                  </span>
+                )}
+              </div>
               <input
                 type="text"
                 placeholder="請輸入廠商全名或個人受款姓名"

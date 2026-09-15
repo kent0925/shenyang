@@ -18,6 +18,7 @@ import { generatePaymentRequestExcel } from './generators/excel/paymentRequestEx
 import { generatePdfFromElement } from './generators/pdf/pdfHelper';
 import { getSealApprovalBaseFilename, getPaymentRequestBaseFilename } from './utils/filename';
 import { validateTaxId } from './services/companyLookup';
+import { parseSafeAmount } from './services/budgetUsage';
 import {
   Eye,
   FileSpreadsheet,
@@ -38,6 +39,7 @@ const MainApp: React.FC = () => {
   // 表單後端持久化 ID 追蹤（若有值表示為更新既有表單，若為 null 表示為建立新表單）
   const [currentSealFormId, setCurrentSealFormId] = useState<string | null>(null);
   const [currentPaymentFormId, setCurrentPaymentFormId] = useState<string | null>(null);
+  const [isPaymentOverBudget, setIsPaymentOverBudget] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -72,7 +74,27 @@ const MainApp: React.FC = () => {
       if (!paymentData.company.trim()) newErrors.company = '請選擇或填寫公司名稱';
       if (!paymentData.applyDate) newErrors.applyDate = '請選擇申請日期';
       if (!paymentData.vendor.trim()) newErrors.vendor = '請填寫受款人／廠商';
-      if (!paymentData.currentAmount.trim()) newErrors.currentAmount = '請填寫本期請款／驗收／預付額';
+
+      const currentAmt = parseSafeAmount(paymentData.currentAmount);
+      if (!paymentData.currentAmount.trim()) {
+        newErrors.currentAmount = '請填寫本期請款／驗收／預付額';
+      } else if (currentAmt <= 0) {
+        newErrors.currentAmount = '請填寫大於 0 之有效請款金額';
+      }
+
+      const isBudgeted = paymentData.budgetType !== 'unbudgeted';
+      if (isBudgeted) {
+        if (!paymentData.projectId) {
+          newErrors.project = '有預算請款請選擇專案主檔';
+        }
+        if (!paymentData.budgetItemId) {
+          newErrors.budgetItemId = '請選擇預算項目';
+        }
+        if (isPaymentOverBudget) {
+          newErrors.budgetItemId = '本次請款金額超出預算可用額度，無法儲存';
+        }
+      }
+
       if (paymentData.vendorTaxId && paymentData.vendorTaxId.trim()) {
         const taxId = paymentData.vendorTaxId.trim();
         if (taxId.length !== 8 || !validateTaxId(taxId)) {
@@ -291,6 +313,8 @@ const MainApp: React.FC = () => {
                 data={paymentData}
                 onChange={setPaymentData}
                 errors={errors}
+                currentFormId={currentPaymentFormId || undefined}
+                onOverBudgetChange={setIsPaymentOverBudget}
               />
             )}
             {activeTab === 'records' && (

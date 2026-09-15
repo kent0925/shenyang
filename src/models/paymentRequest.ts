@@ -20,7 +20,15 @@ export interface SpecialRequirements {
 export interface PaymentRequestData {
   company: string;          // 公司名稱
   applyDate: string;        // 申請日期 YYYY-MM-DD
-  project: string;          // 專案代號/名稱
+
+  // Phase 2B-3C/D 主檔關聯與預算控制
+  projectId?: string;       // 專案主檔 ID (PRJ-xxxx)
+  vendorId?: string;        // 廠商主檔 ID (VND-xxxx)
+  budgetType?: 'budgeted' | 'unbudgeted'; // 預算類型（預設 budgeted）
+  budgetItemId?: string;    // 預算項目 ID (BGT-xxxx)
+  budgetItemName?: string;  // 預算項目名稱
+
+  project: string;          // 專案代號/名稱 (保留既有文字)
   requisitionNumber: string;// 請購單編號
   vendor: string;           // 受款人/廠商
   vendorTaxId?: string;     // 統一編號（8 碼數字，選填）
@@ -54,6 +62,11 @@ export interface PaymentRequestData {
 export const INITIAL_PAYMENT_REQUEST_DATA: PaymentRequestData = {
   company: '昇陽開發實業股份有限公司',
   applyDate: new Date().toISOString().split('T')[0],
+  projectId: '',
+  vendorId: '',
+  budgetType: 'budgeted',
+  budgetItemId: '',
+  budgetItemName: '',
   project: '',
   requisitionNumber: '',
   vendor: '',
