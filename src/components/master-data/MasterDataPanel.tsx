@@ -19,45 +19,48 @@ export const MasterDataPanel: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* 內部子頁籤 (Segmented Control) */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-b border-slate-200 pb-3 gap-2">
+        <div className="w-full sm:w-auto grid grid-cols-3 sm:flex sm:items-center gap-1 sm:gap-2 bg-slate-100 p-1 rounded-xl">
           <button
             type="button"
             onClick={() => setActiveTab('projects')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition ${
               activeTab === 'projects'
                 ? 'bg-white text-blue-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <FolderKanban className="w-4 h-4" />
-            <span>專案主檔</span>
+            <FolderKanban className="w-4 h-4 flex-shrink-0" />
+            <span className="hidden sm:inline">專案主檔</span>
+            <span className="sm:hidden inline">專案</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('vendors')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition ${
               activeTab === 'vendors'
                 ? 'bg-white text-blue-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Building2 className="w-4 h-4" />
-            <span>廠商主檔</span>
+            <Building2 className="w-4 h-4 flex-shrink-0" />
+            <span className="hidden sm:inline">廠商主檔</span>
+            <span className="sm:hidden inline">廠商</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('budgets')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${
+            className={`flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition ${
               activeTab === 'budgets'
                 ? 'bg-white text-blue-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Coins className="w-4 h-4" />
-            <span>預算項目</span>
+            <Coins className="w-4 h-4 flex-shrink-0" />
+            <span className="hidden sm:inline">預算項目</span>
+            <span className="sm:hidden inline">預算</span>
           </button>
         </div>
 

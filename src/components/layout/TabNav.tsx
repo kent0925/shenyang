@@ -10,56 +10,56 @@ interface Props {
 
 export const TabNav: React.FC<Props> = ({ activeTab, onChange }) => {
   return (
-    <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-4 pt-3">
+    <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-2 sm:px-4 pt-2 sm:pt-3 overflow-x-auto flex-nowrap whitespace-nowrap scrollbar-none">
       <button
         type="button"
         onClick={() => onChange('seal')}
-        className={`flex items-center gap-2 px-5 py-2.5 font-medium text-sm transition-colors border-b-2 -mb-px ${
+        className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 font-medium text-xs sm:text-sm transition-colors border-b-2 -mb-px flex-shrink-0 whitespace-nowrap ${
           activeTab === 'seal'
             ? 'border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg'
             : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-t-lg'
         }`}
       >
-        <Stamp className="w-4 h-4" />
+        <Stamp className="w-4 h-4 flex-shrink-0" />
         <span>用印／簽呈</span>
       </button>
 
       <button
         type="button"
         onClick={() => onChange('payment')}
-        className={`flex items-center gap-2 px-5 py-2.5 font-medium text-sm transition-colors border-b-2 -mb-px ${
+        className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 font-medium text-xs sm:text-sm transition-colors border-b-2 -mb-px flex-shrink-0 whitespace-nowrap ${
           activeTab === 'payment'
             ? 'border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg'
             : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-t-lg'
         }`}
       >
-        <Receipt className="w-4 h-4" />
+        <Receipt className="w-4 h-4 flex-shrink-0" />
         <span>請款單</span>
       </button>
 
       <button
         type="button"
         onClick={() => onChange('records')}
-        className={`flex items-center gap-2 px-5 py-2.5 font-medium text-sm transition-colors border-b-2 -mb-px ${
+        className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 font-medium text-xs sm:text-sm transition-colors border-b-2 -mb-px flex-shrink-0 whitespace-nowrap ${
           activeTab === 'records'
             ? 'border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg'
             : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-t-lg'
         }`}
       >
-        <FileText className="w-4 h-4" />
+        <FileText className="w-4 h-4 flex-shrink-0" />
         <span>表單紀錄</span>
       </button>
 
       <button
         type="button"
         onClick={() => onChange('master')}
-        className={`flex items-center gap-2 px-5 py-2.5 font-medium text-sm transition-colors border-b-2 -mb-px ${
+        className={`flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 font-medium text-xs sm:text-sm transition-colors border-b-2 -mb-px flex-shrink-0 whitespace-nowrap ${
           activeTab === 'master'
             ? 'border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg'
             : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-t-lg'
         }`}
       >
-        <Database className="w-4 h-4" />
+        <Database className="w-4 h-4 flex-shrink-0" />
         <span>主檔管理</span>
       </button>
     </div>

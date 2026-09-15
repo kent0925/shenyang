@@ -497,98 +497,177 @@ export const BudgetItemsPanel: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                  <th className="py-3 px-4">預算編號</th>
-                  <th className="py-3 px-4">年度</th>
-                  <th className="py-3 px-4">專案名稱 / 公司</th>
-                  <th className="py-3 px-4">項目名稱</th>
-                  <th className="py-3 px-4">指定廠商</th>
-                  <th className="py-3 px-4 text-right">預算金額</th>
-                  <th className="py-3 px-4 text-right">終止金額</th>
-                  <th className="py-3 px-4 text-right">可用餘額</th>
-                  <th className="py-3 px-4 text-center">狀態</th>
-                  <th className="py-3 px-4 text-center">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm">
-                {filteredAndSortedItems.map((item) => {
-                  const bAmount = item.budgetAmount || 0;
-                  const tAmount = item.terminatedAmount || 0;
-                  const balance = bAmount - tAmount;
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    <th className="py-3 px-4">預算編號</th>
+                    <th className="py-3 px-4">年度</th>
+                    <th className="py-3 px-4">專案名稱 / 公司</th>
+                    <th className="py-3 px-4">項目名稱</th>
+                    <th className="py-3 px-4">指定廠商</th>
+                    <th className="py-3 px-4 text-right">預算金額</th>
+                    <th className="py-3 px-4 text-right">終止金額</th>
+                    <th className="py-3 px-4 text-right">可用餘額</th>
+                    <th className="py-3 px-4 text-center">狀態</th>
+                    <th className="py-3 px-4 text-center">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm">
+                  {filteredAndSortedItems.map((item) => {
+                    const bAmount = item.budgetAmount || 0;
+                    const tAmount = item.terminatedAmount || 0;
+                    const balance = bAmount - tAmount;
 
-                  return (
-                    <tr key={item.budgetItemId} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3 px-4 font-mono text-xs text-slate-600">
-                        {item.budgetItemId}
-                      </td>
-                      <td className="py-3 px-4 text-slate-700 font-medium">
-                        {item.year}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-slate-900">{item.projectName}</div>
-                        <div className="text-xs text-slate-500">{item.company}</div>
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-slate-800">
-                        {item.itemName}
-                      </td>
-                      <td className="py-3 px-4 text-slate-700">
-                        {item.vendorName ? (
-                          <span className="inline-flex items-center gap-1">
-                            <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{item.vendorName}</span>
+                    return (
+                      <tr key={item.budgetItemId} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-4 font-mono text-xs text-slate-600">
+                          {item.budgetItemId}
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 font-medium">
+                          {item.year}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-medium text-slate-900">{item.projectName}</div>
+                          <div className="text-xs text-slate-500">{item.company}</div>
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-slate-800">
+                          {item.itemName}
+                        </td>
+                        <td className="py-3 px-4 text-slate-700">
+                          {item.vendorName ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                              <span>{item.vendorName}</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs">（未指定）</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-medium text-slate-900">
+                          {formatCurrency(bAmount)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-slate-500">
+                          {formatCurrency(tAmount)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-semibold text-blue-700">
+                          {formatCurrency(balance)}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              item.status === 'active'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}
+                          >
+                            {item.status === 'active' ? '執行中' : '已結案'}
                           </span>
-                        ) : (
-                          <span className="text-slate-400 text-xs">（未指定）</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-medium text-slate-900">
-                        {formatCurrency(bAmount)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-slate-500">
-                        {formatCurrency(tAmount)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-semibold text-blue-700">
-                        {formatCurrency(balance)}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
-                            item.status === 'active'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-slate-100 text-slate-600 border border-slate-200'
-                          }`}
-                        >
-                          {item.status === 'active' ? '執行中' : item.status || '已停用'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEdit(item)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded-md transition"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                          <span>編輯</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(item)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded-md transition"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                            <span>編輯</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {filteredAndSortedItems.map((item) => {
+                const bAmount = item.budgetAmount || 0;
+                const tAmount = item.terminatedAmount || 0;
+                const balance = bAmount - tAmount;
+
+                return (
+                  <div key={item.budgetItemId} className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <div className="font-semibold text-slate-900 text-base">{item.itemName}</div>
+                        <div className="text-xs text-slate-600">{item.projectName}</div>
+                        <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                          <span>{item.company}</span>
+                          <span>•</span>
+                          <span className="font-mono">{item.year} 年</span>
+                        </div>
+                      </div>
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold shrink-0 ${
+                          item.status === 'active'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        }`}
+                      >
+                        {item.status === 'active' ? '執行中' : '已結案'}
+                      </span>
+                    </div>
+
+                    {/* 廠商與編號資訊 */}
+                    <div className="text-xs text-slate-600 flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400">廠商：</span>
+                        <span>{item.vendorName || '（未指定）'}</span>
+                      </div>
+                      <span className="font-mono text-[11px] text-slate-400">{item.budgetItemId}</span>
+                    </div>
+
+                    {/* 金額統計卡片 */}
+                    <div className="grid grid-cols-3 gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-100 text-center">
+                      <div>
+                        <div className="text-[10px] text-slate-400">預算金額</div>
+                        <div className="font-mono text-xs font-medium text-slate-900 mt-0.5">
+                          NT$ {formatCurrency(bAmount)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-400">終止金額</div>
+                        <div className="font-mono text-xs text-slate-500 mt-0.5">
+                          NT$ {formatCurrency(tAmount)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-blue-600 font-medium">可用餘額</div>
+                        <div className="font-mono text-xs font-semibold text-blue-700 mt-0.5">
+                          NT$ {formatCurrency(balance)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEdit(item)}
+                        className="w-full flex items-center justify-center gap-1 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-lg transition"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        <span>編輯預算項目</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
       {/* 新增 / 編輯 Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden animate-scaleUp">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden max-h-[90dvh] flex flex-col animate-scaleUp">
             {/* Modal 標題列 */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 shrink-0">
               <div className="flex items-center gap-2">
                 <Coins className="w-5 h-5 text-blue-600" />
                 <h3 className="text-base font-bold text-slate-900">
@@ -606,7 +685,7 @@ export const BudgetItemsPanel: React.FC = () => {
             </div>
 
             {/* Modal 表單主體 */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
               {formErrors.submit && (
                 <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-sm">
                   <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600" />
@@ -790,13 +869,13 @@ export const BudgetItemsPanel: React.FC = () => {
                   disabled={isSaving}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-100"
                 >
-                  <option value="active">執行中 (active)</option>
-                  <option value="closed">已結案 (closed)</option>
+                  <option value="active">執行中</option>
+                  <option value="closed">已結案</option>
                 </select>
               </div>
 
               {/* Modal 按鈕列 */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 shrink-0">
                 <button
                   type="button"
                   onClick={handleCloseModal}
