@@ -114,3 +114,33 @@ npm run build
 - **Framework Preset**: `Vite`
 - **Build Command**: `npm run build`
 - **Output Directory**: `dist`
+
+---
+
+## 伺服器環境變數設定 (Vercel Serverless)
+
+本專案後端 Proxy (`/api/backend`) 需要以下 **Server-Only** 環境變數：
+
+```text
+# GAS 後端轉發憑證 (Server-Only，嚴禁 VITE_ 前綴)
+GAS_WEB_APP_URL=<server-only-gas-url>
+GAS_API_SHARED_SECRET=<server-only-shared-secret>
+
+# 內部自動化／CI 測試金鑰 (Server-Only，選填，用於繞過 Same-Origin 進行自動化驗證)
+BACKEND_PROXY_TOKEN=<server-only-internal-token>
+```
+
+---
+
+## 安全邊界與存取控制模型
+
+1. **Proxy 存取邊界**：
+   - 伺服器端 `/api/backend` 採用雙軌檢查：`Valid Internal API Key OR Valid Same-Origin Browser Request`。
+   - 瀏覽器發出的同源請求 (Same-Origin) 且非跨站 (Non-Cross-Site) 得以存取 Proxy。
+   - **重要宣告**：`Same-Origin is NOT user authentication`（同源邊界僅為網路存取邊界，並非正式使用者身分認證）。
+2. **身分驗證發展規劃**：
+   - 系統已徹底移除暫時性共用密碼與 Session 機制。
+   - 正式使用者身分認證未來將整合 **LINE Login / LIFF**。
+   - 在身分驗證正式上線前，外部存取由 Vercel Deployment Protection 等平台層級保護控管，暫不公開 Production。
+3. **金鑰隔離保證**：
+   - GAS 部署網址與 API Shared Secret 永遠僅由 Vercel Server 端持有，前端 Bundle 與客戶端絕對無法取得。

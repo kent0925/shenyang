@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { ShieldCheck, FileSpreadsheet } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -15,9 +15,11 @@ export const Header: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-emerald-700 text-xs font-medium">
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span>純前端本機運算・資料不外傳</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-full text-slate-700 text-xs font-medium">
+            <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
+            <span>資料後端同步</span>
+          </div>
         </div>
       </div>
     </header>
