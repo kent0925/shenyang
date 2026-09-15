@@ -19,6 +19,7 @@ import { generatePdfFromElement } from './generators/pdf/pdfHelper';
 import { getSealApprovalBaseFilename, getPaymentRequestBaseFilename } from './utils/filename';
 import { validateTaxId } from './services/companyLookup';
 import { parseSafeAmount } from './services/budgetUsage';
+import { validatePaymentHierarchy, PaymentValidationMode } from './services/paymentValidation';
 import {
   Eye,
   FileSpreadsheet,
@@ -62,7 +63,7 @@ const MainApp: React.FC = () => {
   };
 
   // 必填欄位驗證
-  const validateForm = (): boolean => {
+  const validateForm = (mode: PaymentValidationMode = 'read'): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (activeTab === 'seal') {
@@ -83,10 +84,10 @@ const MainApp: React.FC = () => {
       }
 
       const isBudgeted = paymentData.budgetType !== 'unbudgeted';
+      if (mode === 'write' || !(currentPaymentFormId && !paymentData.subProjectId)) {
+        Object.assign(newErrors, validatePaymentHierarchy(paymentData, mode, currentPaymentFormId));
+      }
       if (isBudgeted) {
-        if (!paymentData.projectId) {
-          newErrors.project = '有預算請款請選擇專案主檔';
-        }
         if (!paymentData.budgetItemId) {
           newErrors.budgetItemId = '請選擇預算項目';
         }
@@ -209,7 +210,7 @@ const MainApp: React.FC = () => {
 
   // 0. 儲存表單至後端資料庫
   const handleSaveForm = async () => {
-    if (!validateForm()) return;
+    if (!validateForm('write')) return;
     setIsProcessing(true);
     setStatusMessage('正在儲存表單至後端資料庫...');
 

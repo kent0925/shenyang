@@ -47,5 +47,21 @@ context.setupSheetStructure(legacySheet, context.SCHEMAS[context.SHEETS.BUDGET_I
 check(legacySheet.getRange(legacySheet.getLastRow(), 1, 1, oldCount).getValues()[0][0] === 'BUD-LEGACY', 'Schema extension preserves existing row values');
 check(context.openMasterDatabaseFast && context.handleListSubProjects, 'SubProject CRUD uses fast master accessor');
 
+// Review fix: English-key legacy header must be canonicalized before extension.
+const englishLegacy = context.getYearDatabase(2026).insertSheet('英文舊版預算測試');
+const oldKeys = ['budgetItemId', 'year', 'projectId', 'company', 'projectName', 'itemName', 'vendorId', 'vendorName', 'budgetAmount', 'terminatedAmount', 'status', 'createdAt', 'updatedAt'];
+const oldValues = ['BUD-ENGLISH', '2026', 'PRJ-ENGLISH', 'legacy company', 'legacy project', 'legacy item', 'VEN-007', 'legacy vendor', 12345, 678, 'active', new Date('2026-01-01'), new Date('2026-01-02')];
+englishLegacy.getRange(1, 1, 1, oldKeys.length).setValues([oldKeys]);
+englishLegacy.getRange(2, 1, 1, oldValues.length).setValues([oldValues]);
+context.setupSheetStructure(englishLegacy, context.SCHEMAS[context.SHEETS.BUDGET_ITEMS]);
+const migrated = context.rowToObject(context.SHEETS.BUDGET_ITEMS, englishLegacy.getRange(2, 1, 1, oldCount).getValues()[0]);
+check(migrated.budgetItemId === 'BUD-ENGLISH', 'English migration keeps budgetItemId');
+check(migrated.projectId === 'PRJ-ENGLISH' && migrated.projectName === 'legacy project', 'English migration keeps project relation');
+check(migrated.subProjectId === '' && migrated.subProjectName === '', 'English migration leaves legacy SubProject blank');
+check(migrated.itemName === 'legacy item', 'English migration keeps itemName');
+check(migrated.vendorId === 'VEN-007' && migrated.vendorName === 'legacy vendor', 'English migration keeps vendor relation');
+check(Number(migrated.budgetAmount) === 12345 && Number(migrated.terminatedAmount) === 678, 'English migration keeps amounts');
+check(migrated.status === 'active', 'English migration keeps status');
+
 console.log(`\nPhase 2B-4 GAS tests: ${passed}/${passed + failed} PASS`);
 if (failed) process.exitCode = 1;
