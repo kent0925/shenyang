@@ -10,6 +10,9 @@ import { backendClient } from './backendClient';
 import type {
   Project,
   SaveProjectPayload,
+  SubProject,
+  SaveSubProjectPayload,
+  ListSubProjectsPayload,
   Vendor,
   SaveVendorPayload,
   BudgetItem,
@@ -42,6 +45,14 @@ export class BackendStorageService {
    */
   async saveProject(payload: SaveProjectPayload): Promise<Project> {
     return backendClient.request<Project, SaveProjectPayload>('saveProject', payload);
+  }
+
+  async listSubProjects(filter?: ListSubProjectsPayload): Promise<SubProject[]> {
+    return backendClient.request<SubProject[], ListSubProjectsPayload>('listSubProjects', filter || {});
+  }
+
+  async saveSubProject(payload: SaveSubProjectPayload): Promise<SubProject> {
+    return backendClient.request<SubProject, SaveSubProjectPayload>('saveSubProject', payload);
   }
 
   /**

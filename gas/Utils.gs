@@ -69,6 +69,40 @@ function setupSheetStructure(sheet, schema) {
     // 若為空白或舊版英文 Header，平滑升級第一列為中文 Header（不影響後續資料）
     if (isBlankHeader || isEnglishOrOldHeader) {
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    } else {
+      // Schema 延伸：只插入缺少的欄位，讓既有資料保持在原欄位，不猜測舊資料。
+      // 新欄位會插在 schema 指定位置（例如 projectName 後），其資料列自然為空白。
+      var currentHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0]
+        .map(function (value) { return String(value || '').trim(); });
+      var supportsColumnInsert = !!sheet.insertColumnBefore && !!sheet.insertColumnAfter;
+      for (var h = 0; h < headers.length; h++) {
+        if (currentHeaders.indexOf(headers[h]) !== -1) continue;
+        var nextExisting = -1;
+        for (var n = h + 1; n < headers.length; n++) {
+          var candidateIndex = currentHeaders.indexOf(headers[n]);
+          if (candidateIndex !== -1) { nextExisting = candidateIndex; break; }
+        }
+        if (nextExisting !== -1 && supportsColumnInsert) {
+          sheet.insertColumnBefore(nextExisting + 1);
+          currentHeaders.splice(nextExisting, 0, headers[h]);
+        } else if (supportsColumnInsert) {
+          sheet.insertColumnAfter(sheet.getLastColumn());
+          currentHeaders.push(headers[h]);
+        }
+      }
+      if (!supportsColumnInsert) {
+        var oldDataRows = sheet.getLastRow() > 1
+          ? sheet.getRange(2, 1, sheet.getLastRow() - 1, currentHeaders.length).getValues()
+          : [];
+        var migratedRows = oldDataRows.map(function (oldRow) {
+          return headers.map(function (header) {
+            var oldIndex = currentHeaders.indexOf(header);
+            return oldIndex === -1 ? '' : oldRow[oldIndex];
+          });
+        });
+        if (migratedRows.length) sheet.getRange(2, 1, migratedRows.length, headers.length).setValues(migratedRows);
+      }
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     }
   }
 

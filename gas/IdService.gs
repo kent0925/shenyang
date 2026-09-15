@@ -5,6 +5,7 @@
  * 1. 支援格式：
  *    - 專案：PRJ-000001
  *    - 廠商：VEN-000001
+ *    - 分案：SUB-000001
  *    - 預算項目：BUD-YYYY-000001 (如 BUD-2026-000001)
  *    - 表單紀錄：FRM-YYYY-000001 (如 FRM-2026-000001)
  * 2. 併發防護：使用 LockService.getScriptLock() 確保多人同時儲存不產生重複序號。
@@ -18,6 +19,7 @@
 var ID_TYPES = {
   PROJECT: 'PROJECT',
   VENDOR: 'VENDOR',
+  SUB_PROJECT: 'SUB_PROJECT',
   BUDGET: 'BUDGET',
   FORM: 'FORM',
 };
@@ -119,6 +121,22 @@ function getNextId(type, year) {
         var nextSeqVen = currentSeqVen + 1;
         props.setProperty(propKeyVen, String(nextSeqVen));
         return 'VEN-' + padZero6(nextSeqVen);
+      }
+
+      case ID_TYPES.SUB_PROJECT: {
+        var propKeySub = 'COUNTER_SUB_PROJECT';
+        var currentSeqStrSub = props.getProperty(propKeySub);
+        var currentSeqSub = 0;
+        if (currentSeqStrSub === null || currentSeqStrSub === '') {
+          var masterSsSub = openMasterDatabaseFast();
+          var subSheet = masterSsSub.getSheetByName(SHEETS.SUB_PROJECTS);
+          currentSeqSub = scanMaxSequenceFromSheet(subSheet, /^SUB-(\d+)$/);
+        } else {
+          currentSeqSub = parseInt(currentSeqStrSub, 10) || 0;
+        }
+        var nextSeqSub = currentSeqSub + 1;
+        props.setProperty(propKeySub, String(nextSeqSub));
+        return 'SUB-' + padZero6(nextSeqSub);
       }
 
       case ID_TYPES.BUDGET: {

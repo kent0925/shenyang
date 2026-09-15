@@ -18,6 +18,7 @@
 var SHEETS = {
   // 主檔資料庫 Sheets
   PROJECTS: '專案主檔',
+  SUB_PROJECTS: '分案主檔',
   VENDORS: '廠商主檔',
   YEAR_CONFIG: '年度設定',
 
@@ -34,6 +35,7 @@ var SHEETS = {
  */
 var MASTER_SHEET_NAMES = [
   SHEETS.PROJECTS,
+  SHEETS.SUB_PROJECTS,
   SHEETS.VENDORS,
   SHEETS.YEAR_CONFIG,
 ];
@@ -92,6 +94,18 @@ var SCHEMAS = {
     ],
   },
 
+  // 3. 分案主檔（固定兩層：專案 → 分案）
+  '分案主檔': {
+    columns: [
+      { key: 'subProjectId', label: '分案編號', type: 'text' },
+      { key: 'projectId', label: '專案編號', type: 'text' },
+      { key: 'subProjectName', label: '分案名稱', type: 'text' },
+      { key: 'status', label: '狀態', type: 'text' },
+      { key: 'createdAt', label: '建立時間', type: 'datetime' },
+      { key: 'updatedAt', label: '更新時間', type: 'datetime' },
+    ],
+  },
+
   // 3. 年度設定
   '年度設定': {
     columns: [
@@ -111,6 +125,8 @@ var SCHEMAS = {
       { key: 'projectId', label: '專案編號', type: 'text' },
       { key: 'company', label: '公司', type: 'text' },
       { key: 'projectName', label: '專案名稱', type: 'text' },
+      { key: 'subProjectId', label: '分案編號', type: 'text' },
+      { key: 'subProjectName', label: '分案名稱', type: 'text' },
       { key: 'itemName', label: '項目名稱', type: 'text' },
       { key: 'vendorId', label: '廠商編號', type: 'text' },
       { key: 'vendorName', label: '廠商名稱', type: 'text' },
@@ -134,6 +150,8 @@ var SCHEMAS = {
       { key: 'company', label: '公司', type: 'text' },
       { key: 'projectId', label: '專案編號', type: 'text' },
       { key: 'projectName', label: '專案名稱', type: 'text' },
+      { key: 'subProjectId', label: '分案編號', type: 'text' },
+      { key: 'subProjectName', label: '分案名稱', type: 'text' },
       { key: 'vendorId', label: '廠商編號', type: 'text' },
       { key: 'vendorName', label: '廠商名稱', type: 'text' },
       { key: 'vendorTaxId', label: '廠商統一編號', type: 'text' },
@@ -159,6 +177,8 @@ var SCHEMAS = {
       { key: 'company', label: '公司', type: 'text' },
       { key: 'projectId', label: '專案編號', type: 'text' },
       { key: 'projectName', label: '專案名稱', type: 'text' },
+      { key: 'subProjectId', label: '分案編號', type: 'text' },
+      { key: 'subProjectName', label: '分案名稱', type: 'text' },
       { key: 'vendorId', label: '廠商編號', type: 'text' },
       { key: 'vendorName', label: '廠商名稱', type: 'text' },
       { key: 'vendorTaxId', label: '廠商統一編號', type: 'text' },
@@ -256,9 +276,17 @@ function rowToObject(sheetName, rowValues) {
   if (!schema || !schema.columns) {
     throw new Error('未定義的 Sheet Schema: ' + sheetName);
   }
+  var values = rowValues ? rowValues.slice() : [];
+  // Legacy yearly rows predate the two subdivision columns. Read them safely by
+  // inserting blank values at the schema position; never infer a subdivision.
+  var subIndex = -1;
+  schema.columns.forEach(function (col, index) { if (col.key === 'subProjectId') subIndex = index; });
+  if (subIndex !== -1 && values.length === schema.columns.length - 2) {
+    values.splice(subIndex, 0, '', '');
+  }
   var obj = {};
   schema.columns.forEach(function (col, idx) {
-    obj[col.key] = (rowValues && rowValues[idx] !== undefined) ? rowValues[idx] : null;
+    obj[col.key] = (values && values[idx] !== undefined) ? values[idx] : null;
   });
   return obj;
 }

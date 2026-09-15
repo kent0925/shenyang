@@ -134,6 +134,49 @@ function handleSaveProject(payload) {
 // 2. Vendors API
 // ==========================================
 
+function handleListSubProjects(payload) {
+  var projectId = payload && payload.projectId ? String(payload.projectId).trim() : '';
+  var status = payload && payload.status ? String(payload.status).trim() : '';
+  var ss = openMasterDatabaseFast();
+  var sheet = ss.getSheetByName(SHEETS.SUB_PROJECTS);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  var cols = SCHEMAS[SHEETS.SUB_PROJECTS].columns.length;
+  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, cols).getValues();
+  return rows.map(function (row) { return rowToObject(SHEETS.SUB_PROJECTS, row); }).filter(function (item) {
+    return item.subProjectId && (!projectId || String(item.projectId) === projectId) && (!status || String(item.status) === status);
+  });
+}
+
+function handleSaveSubProject(payload) {
+  if (!payload) throw createApiError('VALIDATION_ERROR', '缺少請求內容 (payload)');
+  var projectId = payload.projectId ? String(payload.projectId).trim() : '';
+  var name = payload.subProjectName ? String(payload.subProjectName).trim() : '';
+  if (!projectId) throw createApiError('VALIDATION_ERROR', '專案編號 (projectId) 為必填欄位');
+  if (!name) throw createApiError('VALIDATION_ERROR', '分案名稱 (subProjectName) 為必填欄位');
+  var ss = openMasterDatabaseFast();
+  var projectSheet = ss.getSheetByName(SHEETS.PROJECTS);
+  if (findRowIndexById(projectSheet, projectId) === -1) throw createApiError('NOT_FOUND', '找不到專案編號: ' + projectId);
+  var sheet = ss.getSheetByName(SHEETS.SUB_PROJECTS);
+  var subId = payload.subProjectId ? String(payload.subProjectId).trim() : '';
+  if (subId) {
+    var rowIndex = findRowIndexById(sheet, subId);
+    if (rowIndex === -1) throw createApiError('NOT_FOUND', '找不到分案編號: ' + subId);
+    var cols = SCHEMAS[SHEETS.SUB_PROJECTS].columns.length;
+    var old = rowToObject(SHEETS.SUB_PROJECTS, sheet.getRange(rowIndex, 1, 1, cols).getValues()[0]);
+    if (String(old.projectId) !== projectId) throw createApiError('VALIDATION_ERROR', '分案不可變更所屬專案');
+    var updated = { subProjectId: old.subProjectId, projectId: old.projectId, subProjectName: name, status: payload.status || old.status || 'active', createdAt: old.createdAt, updatedAt: getCurrentTimestamp() };
+    sheet.getRange(rowIndex, 1, 1, cols).setValues([objectToRow(SHEETS.SUB_PROJECTS, updated)]);
+    return updated;
+  }
+  var created = { subProjectId: getNextId(ID_TYPES.SUB_PROJECT), projectId: projectId, subProjectName: name, status: payload.status ? String(payload.status).trim() : 'active', createdAt: getCurrentTimestamp(), updatedAt: getCurrentTimestamp() };
+  sheet.appendRow(objectToRow(SHEETS.SUB_PROJECTS, created));
+  return created;
+}
+
+// ==========================================
+// 3. Vendors API
+// ==========================================
+
 function handleListVendors(payload) {
   var masterSs = openMasterDatabaseFast();
   var sheet = masterSs.getSheetByName(SHEETS.VENDORS);
@@ -234,6 +277,7 @@ function handleSaveVendor(payload) {
 function handleListBudgetItems(payload) {
   var year = (payload && payload.year) ? parseInt(payload.year, 10) : getCurrentYear();
   var projectId = (payload && payload.projectId) ? String(payload.projectId).trim() : '';
+  var subProjectId = (payload && payload.subProjectId) ? String(payload.subProjectId).trim() : '';
 
   // 純讀取 API：不得建立年度資料庫，若不存在直接回傳空陣列
   var yearSs = getYearDatabase(year);
@@ -253,6 +297,7 @@ function handleListBudgetItems(payload) {
     var item = rowToObject(SHEETS.BUDGET_ITEMS, rows[i]);
     if (item.budgetItemId) {
       if (!projectId || item.projectId === projectId) {
+        if (subProjectId && String(item.subProjectId || '') !== subProjectId) continue;
         items.push(item);
       }
     }
@@ -271,6 +316,23 @@ function handleSaveBudgetItem(payload) {
   }
   if (!payload.itemName || String(payload.itemName).trim() === '') {
     throw createApiError('VALIDATION_ERROR', '項目名稱 (itemName) 為必填欄位');
+  }
+
+  var projectId = payload.projectId ? String(payload.projectId).trim() : '';
+  var subProjectId = payload.subProjectId ? String(payload.subProjectId).trim() : '';
+  var masterSs = openMasterDatabaseFast();
+  var projectSheet = masterSs.getSheetByName(SHEETS.PROJECTS);
+  var projectRow = projectId ? findRowIndexById(projectSheet, projectId) : -1;
+  if (!projectId && !payload.budgetItemId) throw createApiError('VALIDATION_ERROR', '新增預算項目必須提供專案編號');
+  if (payload.budgetItemId && projectId && projectRow === -1) throw createApiError('NOT_FOUND', '找不到專案編號: ' + projectId);
+  if (!payload.budgetItemId && !subProjectId) throw createApiError('VALIDATION_ERROR', '新增預算項目必須提供分案編號');
+  var subProject = null;
+  if (subProjectId) {
+    var subSheet = masterSs.getSheetByName(SHEETS.SUB_PROJECTS);
+    var subRow = findRowIndexById(subSheet, subProjectId);
+    if (subRow === -1) throw createApiError('NOT_FOUND', '找不到分案編號: ' + subProjectId);
+    subProject = rowToObject(SHEETS.SUB_PROJECTS, subSheet.getRange(subRow, 1, 1, SCHEMAS[SHEETS.SUB_PROJECTS].columns.length).getValues()[0]);
+    if (projectId && String(subProject.projectId) !== projectId) throw createApiError('VALIDATION_ERROR', '預算項目專案與分案不符');
   }
 
   var year = payload.year ? parseInt(payload.year, 10) : getCurrentYear();
@@ -298,6 +360,8 @@ function handleSaveBudgetItem(payload) {
       projectId: payload.projectId !== undefined ? payload.projectId : existingObj.projectId,
       company: payload.company || existingObj.company,
       projectName: payload.projectName || existingObj.projectName,
+      subProjectId: payload.subProjectId !== undefined ? subProjectId : (existingObj.subProjectId || ''),
+      subProjectName: subProject ? subProject.subProjectName : (payload.subProjectName !== undefined ? payload.subProjectName : (existingObj.subProjectName || '')),
       itemName: payload.itemName || existingObj.itemName,
       vendorId: payload.vendorId !== undefined ? payload.vendorId : existingObj.vendorId,
       vendorName: payload.vendorName !== undefined ? payload.vendorName : existingObj.vendorName,
@@ -320,6 +384,8 @@ function handleSaveBudgetItem(payload) {
       projectId: payload.projectId ? String(payload.projectId).trim() : '',
       company: String(payload.company).trim(),
       projectName: String(payload.projectName).trim(),
+      subProjectId: subProjectId,
+      subProjectName: subProject.subProjectName,
       itemName: String(payload.itemName).trim(),
       vendorId: payload.vendorId ? String(payload.vendorId).trim() : '',
       vendorName: payload.vendorName ? String(payload.vendorName).trim() : '',
@@ -345,6 +411,7 @@ function handleListForms(payload) {
   var formType = (payload && payload.formType) ? String(payload.formType).trim() : '';
   var projectId = (payload && payload.projectId) ? String(payload.projectId).trim() : '';
   var vendorId = (payload && payload.vendorId) ? String(payload.vendorId).trim() : '';
+  var subProjectId = (payload && payload.subProjectId) ? String(payload.subProjectId).trim() : '';
   var status = (payload && payload.status) ? String(payload.status).trim() : '';
 
   // 純讀取 API：不得建立年度資料庫，若不存在直接回傳空陣列
@@ -366,6 +433,7 @@ function handleListForms(payload) {
     if (form.formId) {
       if (formType && form.formType !== formType) continue;
       if (projectId && form.projectId !== projectId) continue;
+      if (subProjectId && String(form.subProjectId || '') !== subProjectId) continue;
       if (vendorId && form.vendorId !== vendorId) continue;
       if (status && form.status !== status) continue;
       forms.push(form);
@@ -473,6 +541,12 @@ function validatePaymentBudget(year, payload, excludeFormId) {
     );
   }
 
+  var payloadSubProjectId = payload.subProjectId ? String(payload.subProjectId).trim() : '';
+  var budgetSubProjectId = budgetItem.subProjectId ? String(budgetItem.subProjectId).trim() : '';
+  if (!payloadSubProjectId || payloadSubProjectId !== budgetSubProjectId) {
+    throw createApiError('VALIDATION_ERROR', '請款分案與預算項目所屬分案不符');
+  }
+
   // 2. 廠商指定關聯驗證 (若項目有指定廠商)
   if (budgetItem.vendorId && String(budgetItem.vendorId).trim() !== '') {
     if (!payload.vendorId || String(payload.vendorId).trim() !== String(budgetItem.vendorId).trim()) {
@@ -545,6 +619,20 @@ function handleSaveForm(payload) {
   var budgetItemId = payload.budgetItemId
     ? String(payload.budgetItemId).trim()
     : '';
+  var subProjectId = payload.subProjectId ? String(payload.subProjectId).trim() : '';
+
+  if (payload.formType === 'payment_request') {
+    if (!payload.projectId || String(payload.projectId).trim() === '') throw createApiError('VALIDATION_ERROR', '請款表單必須提供專案編號');
+    if (!subProjectId) throw createApiError('VALIDATION_ERROR', '新請款表單必須提供分案編號');
+    var masterFormSs = openMasterDatabaseFast();
+    var formProjectSheet = masterFormSs.getSheetByName(SHEETS.PROJECTS);
+    if (findRowIndexById(formProjectSheet, String(payload.projectId).trim()) === -1) throw createApiError('NOT_FOUND', '找不到專案編號: ' + payload.projectId);
+    var formSubSheet = masterFormSs.getSheetByName(SHEETS.SUB_PROJECTS);
+    var formSubRow = findRowIndexById(formSubSheet, subProjectId);
+    if (formSubRow === -1) throw createApiError('NOT_FOUND', '找不到分案編號: ' + subProjectId);
+    var formSub = rowToObject(SHEETS.SUB_PROJECTS, formSubSheet.getRange(formSubRow, 1, 1, SCHEMAS[SHEETS.SUB_PROJECTS].columns.length).getValues()[0]);
+    if (String(formSub.projectId) !== String(payload.projectId).trim()) throw createApiError('VALIDATION_ERROR', '請款表單專案與分案不符');
+  }
 
   if (isBudgetedPayment && !budgetItemId) {
     throw createApiError(
@@ -552,6 +640,7 @@ function handleSaveForm(payload) {
       '有預算請款必須提供預算項目編號'
     );
   }
+  if (isBudgetedPayment && !subProjectId) throw createApiError('VALIDATION_ERROR', '有預算請款必須提供分案編號');
 
   // Concurrency 防線：針對有預算之請款單儲存，使用 LockService 避免併發超額
   var lock = null;
@@ -613,6 +702,8 @@ function handleSaveForm(payload) {
       company: payload.company || existingObj.company,
       projectId: payload.projectId !== undefined ? payload.projectId : existingObj.projectId,
       projectName: payload.projectName !== undefined ? payload.projectName : existingObj.projectName,
+      subProjectId: payload.subProjectId !== undefined ? payload.subProjectId : (existingObj.subProjectId || ''),
+      subProjectName: formSub ? formSub.subProjectName : (payload.subProjectName !== undefined ? payload.subProjectName : (existingObj.subProjectName || '')),
       vendorId: payload.vendorId !== undefined ? payload.vendorId : existingObj.vendorId,
       vendorName: payload.vendorName !== undefined ? payload.vendorName : existingObj.vendorName,
       vendorTaxId: payload.vendorTaxId !== undefined ? payload.vendorTaxId : existingObj.vendorTaxId,
@@ -641,6 +732,8 @@ function handleSaveForm(payload) {
       company: String(payload.company).trim(),
       projectId: payload.projectId ? String(payload.projectId).trim() : '',
       projectName: payload.projectName ? String(payload.projectName).trim() : '',
+      subProjectId: subProjectId,
+      subProjectName: formSub ? formSub.subProjectName : (payload.subProjectName ? String(payload.subProjectName).trim() : ''),
       vendorId: payload.vendorId ? String(payload.vendorId).trim() : '',
       vendorName: payload.vendorName ? String(payload.vendorName).trim() : '',
       vendorTaxId: payload.vendorTaxId ? String(payload.vendorTaxId).trim() : '',
