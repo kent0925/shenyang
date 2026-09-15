@@ -233,6 +233,28 @@ async function runTests() {
   assert(r1Res.ok === false && r1Res.error.code === 'VALIDATION_ERROR' && r1Res.error.message.includes('有預算請款必須提供專案編號'), 'R1: 有預算但缺少 projectId 正確被拒絕並回傳 VALIDATION_ERROR');
 
   // ----------------------------------------------------
+  // R6: budgeted + 缺少 budgetItemId 必須拒絕，不得繞過預算防線
+  // ----------------------------------------------------
+  console.log('\n【測試 R6：有預算但缺少預算項目編號檢查】');
+  const r6Res = callDoPost(gas, {
+    action: 'saveForm',
+    secret: TEST_SHARED_SECRET,
+    payload: {
+      year: 2026,
+      formType: 'payment_request',
+      status: 'submitted',
+      company: '昇陽開發實業股份有限公司',
+      projectId: testProjectId,
+      vendorId: testVendorId,
+      budgetType: 'budgeted',
+      budgetItemId: '', // 故意留空
+      amount: 50000,
+      payloadJson: '{}',
+    },
+  });
+  assert(r6Res.ok === false && r6Res.error.code === 'VALIDATION_ERROR' && r6Res.error.message.includes('有預算請款必須提供預算項目編號'), 'R6: 有預算但缺少 budgetItemId 正確被拒絕並回傳 VALIDATION_ERROR');
+
+  // ----------------------------------------------------
   // B3: 廠商 ID 與預算項目指定廠商不一致拋出 VALIDATION_ERROR
   // ----------------------------------------------------
   console.log('\n【測試 B3：指定承攬廠商一致性檢查】');

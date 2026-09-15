@@ -127,6 +127,13 @@ export const PaymentRequestForm: React.FC<Props> = ({
     return budgetItems.find((b) => b.budgetItemId === data.budgetItemId);
   }, [budgetItems, data.budgetItemId]);
 
+  // 新表單只能選 active 預算項目；既有表單若已連結 closed 項目仍保留顯示。
+  const selectableBudgetItems = useMemo(() => {
+    return budgetItems.filter(
+      (item) => item.status === 'active' || item.budgetItemId === data.budgetItemId
+    );
+  }, [budgetItems, data.budgetItemId]);
+
   // 預算使用計算
   const budgetUsage: BudgetUsageSummary | null = useMemo(() => {
     if (data.budgetType === 'unbudgeted' || !data.budgetItemId || !selectedBudgetItem) {
@@ -754,8 +761,8 @@ export const PaymentRequestForm: React.FC<Props> = ({
                         budgetItemId: bId,
                         budgetItemName: matched ? matched.itemName : '',
                       };
-                      // 若預算項目有指定廠商且當前尚未填寫廠商，可自動提示/連動
-                      if (matched && matched.vendorId && !data.vendor) {
+                      // 預算項目指定的廠商是 authoritative relation，選取時一律同步。
+                      if (matched && matched.vendorId) {
                         const matchedVend = vendors.find((v) => v.vendorId === matched.vendorId);
                         if (matchedVend) {
                           updates.vendorId = matchedVend.vendorId;
@@ -767,6 +774,14 @@ export const PaymentRequestForm: React.FC<Props> = ({
                           updates.branchName = matchedVend.branchName || '';
                           updates.accountNumber = matchedVend.accountNumber || '';
                           updates.accountName = matchedVend.accountName || matchedVend.vendorName;
+                          updates.bankAccount = {
+                            type: 'code',
+                            bankCode: matchedVend.bankCode || '',
+                            bankName: matchedVend.bankName || '',
+                            branch: matchedVend.branchName || matchedVend.branchCode || '',
+                            accountNumber: matchedVend.accountNumber || '',
+                            accountName: matchedVend.accountName || matchedVend.vendorName,
+                          };
                         }
                       }
                       onChange({
@@ -776,8 +791,8 @@ export const PaymentRequestForm: React.FC<Props> = ({
                     }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
                   >
-                    <option value="">-- 請選擇預算項目 ({budgetItems.length} 項) --</option>
-                    {budgetItems.map((b) => (
+                    <option value="">-- 請選擇預算項目 ({selectableBudgetItems.length} 項) --</option>
+                    {selectableBudgetItems.map((b) => (
                       <option key={b.budgetItemId} value={b.budgetItemId}>
                         {b.itemName}（預算額: NT$ {formatCurrency(b.budgetAmount)}
                         {b.terminatedAmount ? ` / 終止: NT$ ${formatCurrency(b.terminatedAmount)}` : ''}）

@@ -387,6 +387,71 @@ assert(manualSwitched.budgetItemId === '', 'R4.2: 項目有指定廠商時 budge
 assert(manualSwitched.budgetItemName === '', 'R4.3: 項目有指定廠商時 budgetItemName 被一併清除');
 assert(manualSwitched.projectId === 'PRJ-001', 'R4.4: projectId 依然完整保留');
 
+// ==========================================
+// R7/R8: BudgetItem 指定 Vendor 同步與 closed 項目選擇範圍
+// ==========================================
+function simulateBudgetItemSelect(currentForm: PaymentRequestData, matched: { budgetItemId: string; itemName: string; vendorId?: string }, matchedVend?: {
+  vendorId: string;
+  vendorName: string;
+  taxId: string;
+  bankCode: string;
+  bankName: string;
+  branchCode: string;
+  branchName: string;
+  accountName: string;
+  accountNumber: string;
+}) {
+  const updates: Partial<PaymentRequestData> = {
+    budgetItemId: matched.budgetItemId,
+    budgetItemName: matched.itemName,
+  };
+  if (matched.vendorId && matchedVend) {
+    updates.vendorId = matchedVend.vendorId;
+    updates.vendor = matchedVend.vendorName;
+    updates.vendorTaxId = matchedVend.taxId;
+    updates.bankCode = matchedVend.bankCode;
+    updates.bankName = matchedVend.bankName;
+    updates.branchCode = matchedVend.branchCode;
+    updates.branchName = matchedVend.branchName;
+    updates.accountName = matchedVend.accountName || matchedVend.vendorName;
+    updates.accountNumber = matchedVend.accountNumber;
+    updates.bankAccount = {
+      type: 'code',
+      bankCode: matchedVend.bankCode,
+      bankName: matchedVend.bankName,
+      branch: matchedVend.branchName || matchedVend.branchCode,
+      accountNumber: matchedVend.accountNumber,
+      accountName: matchedVend.accountName || matchedVend.vendorName,
+    };
+  }
+  return { ...currentForm, ...updates };
+}
+
+function getSelectableBudgetItems(items: Array<{ budgetItemId: string; status: string }>, currentBudgetItemId: string) {
+  return items.filter((item) => item.status === 'active' || item.budgetItemId === currentBudgetItemId);
+}
+
+const vendorA = {
+  vendorId: 'VND-A', vendorName: '廠商 A', taxId: '00123456', bankCode: '0001',
+  bankName: '銀行 A', branchCode: '001', branchName: '分行 A', accountName: '廠商 A', accountNumber: '00001234',
+};
+const budgetItemAssignedA = { budgetItemId: 'BGT-A', itemName: '項目 A', vendorId: 'VND-A' };
+const syncedToA = simulateBudgetItemSelect({ ...formWithVendorA, vendorId: 'VND-B', vendor: '廠商 B' }, budgetItemAssignedA, vendorA);
+assert(syncedToA.vendorId === 'VND-A' && syncedToA.vendor === '廠商 A', 'R7.1: 選取預算項目後 authoritative Vendor 已同步');
+assert(syncedToA.vendorTaxId === '00123456' && syncedToA.bankCode === '0001' && syncedToA.branchCode === '001', 'R7.2: Vendor 稅號與銀行欄位完整同步且保留字串');
+assert(syncedToA.accountNumber === '00001234' && syncedToA.bankAccount?.accountNumber === '00001234', 'R7.3: 帳號與 bankAccount 完整同步且保留前導零');
+assert(syncedToA.budgetItemId === 'BGT-A' && syncedToA.budgetItemName === '項目 A', 'R7.4: 選取後 BudgetItem 關聯保留');
+
+const budgetStatusItems = [
+  { budgetItemId: 'BGT-A', status: 'active' },
+  { budgetItemId: 'BGT-CLOSED', status: 'closed' },
+];
+const newFormItems = getSelectableBudgetItems(budgetStatusItems, '');
+assert(newFormItems.some((item) => item.budgetItemId === 'BGT-A'), 'R8.1: active BudgetItem 可供新表單選取');
+assert(!newFormItems.some((item) => item.budgetItemId === 'BGT-CLOSED'), 'R8.2: 新表單不可選未連結的 closed BudgetItem');
+const legacyFormItems = getSelectableBudgetItems(budgetStatusItems, 'BGT-CLOSED');
+assert(legacyFormItems.some((item) => item.budgetItemId === 'BGT-CLOSED'), 'R8.3: 既有表單已連結 closed BudgetItem 仍可顯示');
+
 console.log(`\n測試總結：${passed} 通過，${failed} 失敗`);
 if (failed > 0) process.exit(1);
 

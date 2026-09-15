@@ -538,7 +538,20 @@ function handleSaveForm(payload) {
 
   var year = payload.year ? parseInt(payload.year, 10) : getCurrentYear();
   var formId = payload.formId ? String(payload.formId).trim() : '';
-  var isBudgetedPayment = (payload.formType === 'payment_request' && payload.budgetType === 'budgeted' && payload.budgetItemId);
+  var isBudgetedPayment = (
+    payload.formType === 'payment_request'
+    && payload.budgetType === 'budgeted'
+  );
+  var budgetItemId = payload.budgetItemId
+    ? String(payload.budgetItemId).trim()
+    : '';
+
+  if (isBudgetedPayment && !budgetItemId) {
+    throw createApiError(
+      'VALIDATION_ERROR',
+      '有預算請款必須提供預算項目編號'
+    );
+  }
 
   // Concurrency 防線：針對有預算之請款單儲存，使用 LockService 避免併發超額
   var lock = null;
