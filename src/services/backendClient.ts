@@ -2,12 +2,12 @@
  * src/services/backendClient.ts - 前端統一後端連線 Client
  *
  * 規範：
- * 1. 統一呼叫 POST /api/backend，不將 GAS URL、Token、Secret 洩漏至前端。
+ * 1. 統一呼叫 POST /api/backend 或獨立端點，不將 GAS URL、Token、Secret 洩漏至前端。
  * 2. 封裝 BackendApiError，至少保留 HTTP status、backend error code 與 safe message。
  * 3. 嚴格遵循 safe message 原則，向 UI 呈現友善中文提示，絕不暴露內部堆疊與連線設定。
- * 4. 完整分辨：network failure、invalid JSON、HTTP error、UNAUTHORIZED、VALIDATION_ERROR、
- *    NOT_FOUND、UNKNOWN_ACTION、SERVER_CONFIG_ERROR、UPSTREAM_HTTP_ERROR、
- *    UPSTREAM_PARSE_ERROR、PROXY_NETWORK_ERROR。
+ * 4. 完整分辨：network failure、invalid JSON、HTTP error、UNAUTHORIZED、FORBIDDEN、
+ *    RATE_LIMITED (429)、VALIDATION_ERROR、NOT_FOUND、UNKNOWN_ACTION、SERVER_CONFIG_ERROR、
+ *    UPSTREAM_HTTP_ERROR、UPSTREAM_PARSE_ERROR、PROXY_NETWORK_ERROR。
  */
 
 export interface BackendRequest<P = any> {
@@ -56,6 +56,7 @@ export class BackendApiError extends Error {
 const SAFE_ERROR_MESSAGES: Record<string, string> = {
   UNAUTHORIZED: '存取未授權或無存取憑證，請確認權限或重新整理頁面。',
   FORBIDDEN: '拒絕跨來源存取請求或存取權限不足。',
+  RATE_LIMITED: '嘗試次數過多，請稍後再試。',
   VALIDATION_ERROR: '資料格式或必填欄位驗證失敗，請檢查輸入內容。',
   NOT_FOUND: '找不到指定的資料項目或資料表。',
   UNKNOWN_ACTION: '不支援的後端操作請求。',
@@ -74,7 +75,6 @@ const SAFE_ERROR_MESSAGES: Record<string, string> = {
  * 根據後端錯誤碼與回應取得面向 UI 的安全中文訊息
  */
 function resolveSafeMessage(code: string, rawMessage?: string): string {
-  // 如果是已知的業務驗證錯誤 (VALIDATION_ERROR) 或找不到 (NOT_FOUND)，且後端訊息安全無洩漏，優先使用後端中文說明
   if (code === 'VALIDATION_ERROR' || code === 'NOT_FOUND') {
     if (rawMessage && !rawMessage.includes('http') && !rawMessage.includes('secret') && !rawMessage.includes('token') && !rawMessage.includes('AppsScript')) {
       return rawMessage;
@@ -84,29 +84,20 @@ function resolveSafeMessage(code: string, rawMessage?: string): string {
 }
 
 /**
- * 執行後端 API 呼叫
- * @param action 操作名稱 (e.g. 'listProjects', 'saveProject', 'health')
- * @param payload 請求參數物件
- * @return 回傳成功之 data 泛型物件
+ * 通用 JSON 請求發送器（支援同源憑證與統一錯誤解析）
+ * @param url 請求端點 (e.g. '/api/backend', '/api/session-login')
+ * @param body 請求內文字串化物件
  */
-export async function sendBackendRequest<T, P extends object = object>(
-  action: string,
-  payload: P = {} as P
-): Promise<T> {
-  const requestBody: BackendRequest<P> = {
-    action,
-    payload,
-  };
-
+export async function requestJson<T>(url: string, body: any): Promise<T> {
   let response: Response;
   try {
-    response = await fetch('/api/backend', {
+    response = await fetch(url, {
       method: 'POST',
       credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify(body),
     });
   } catch (networkErr: any) {
     throw new BackendApiError(
@@ -134,8 +125,16 @@ export async function sendBackendRequest<T, P extends object = object>(
     return jsonResult.data as T;
   }
 
-  // 失敗回應處理
-  const defaultCode = response.status === 401 ? 'UNAUTHORIZED' : (response.status === 403 ? 'FORBIDDEN' : 'HTTP_ERROR');
+  // 失敗狀態碼映射
+  let defaultCode = 'HTTP_ERROR';
+  if (response.status === 401) {
+    defaultCode = 'UNAUTHORIZED';
+  } else if (response.status === 403) {
+    defaultCode = 'FORBIDDEN';
+  } else if (response.status === 429) {
+    defaultCode = 'RATE_LIMITED';
+  }
+
   const errorCode = jsonResult?.error?.code || defaultCode;
   const rawErrorMessage = jsonResult?.error?.message;
   const safeMessage = resolveSafeMessage(errorCode, rawErrorMessage);
@@ -143,6 +142,23 @@ export async function sendBackendRequest<T, P extends object = object>(
   throw new BackendApiError(response.status, errorCode, safeMessage, rawErrorMessage);
 }
 
+/**
+ * 執行後端 API 呼叫 (預設 POST /api/backend)
+ * @param action 操作名稱 (e.g. 'listProjects', 'saveProject', 'health')
+ * @param payload 請求參數物件
+ * @return 回傳成功之 data 泛型物件
+ */
+export async function sendBackendRequest<T, P extends object = object>(
+  action: string,
+  payload: P = {} as P
+): Promise<T> {
+  return requestJson<T>('/api/backend', {
+    action,
+    payload,
+  });
+}
+
 export const backendClient = {
   request: sendBackendRequest,
+  requestJson,
 };

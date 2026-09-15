@@ -8,7 +8,7 @@
  */
 
 import { backendClient } from './backendClient';
-import type { SessionStatusData, SessionLoginPayload } from '../models/backend';
+import type { SessionStatusData } from '../models/backend';
 
 export class SessionAuthService {
   /**
@@ -24,11 +24,11 @@ export class SessionAuthService {
   }
 
   /**
-   * 輸入共享存取密碼解鎖系統
+   * 輸入共享存取密碼解鎖系統（呼叫獨立端點 POST /api/session-login）
    * @param password 使用者輸入之密碼
    */
   async login(password: string): Promise<void> {
-    await backendClient.request<SessionStatusData, SessionLoginPayload>('sessionLogin', {
+    await backendClient.requestJson<SessionStatusData>('/api/session-login', {
       password,
     });
   }

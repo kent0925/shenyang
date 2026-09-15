@@ -7,22 +7,20 @@
  * (Valid Server-Signed Session (shenyang_session HttpOnly) AND Same-Origin)
  *
  * 核心原則：
- * 1. Same-Origin 不是 Authentication，僅作 CSRF 防護與請求邊界。
- * 2. 伺服器端自動注入 GAS_API_SHARED_SECRET，絕不對 Client 洩漏 GAS URL 與 Secret。
- * 3. 嚴禁使用萬用字元 CORS (*)。
- * 4. 錯誤映射與隱私保護：日誌與錯誤訊息中嚴禁輸出 Token、Secret 與密碼。
+ * 1. 登入已移至獨立端點 POST /api/session-login，本入口全面停用 sessionLogin（防範繞過 Firewall）。
+ * 2. 保留 sessionStatus、sessionLogout 與各項常規業務 Actions。
+ * 3. 伺服器端自動注入 GAS_API_SHARED_SECRET，絕不對 Client 洩漏 GAS URL 與 Secret。
+ * 4. 嚴禁使用萬用字元 CORS (*)。
  */
 
 import type { IncomingMessage, ServerResponse } from 'http';
 import {
   SESSION_COOKIE_NAME,
-  createSessionToken,
   verifySessionToken,
-  verifyPassword,
   parseCookies,
-  buildSessionCookie,
   buildClearSessionCookie,
 } from '../server/sessionAuth.ts';
+import { checkOriginBoundary } from '../server/requestSecurity.ts';
 
 export interface VercelApiRequest extends IncomingMessage {
   body?: any;
@@ -34,73 +32,6 @@ export interface VercelApiResponse extends ServerResponse {
   status: (statusCode: number) => VercelApiResponse;
   json: (jsonBody: any) => void;
   send: (body: any) => void;
-}
-
-interface OriginCheckResult {
-  isSameOrigin: boolean;
-  isCrossSite: boolean;
-  isLocalDev: boolean;
-}
-
-/**
- * 檢查請求是否來自同源 (Same-Origin) 前端環境與 CSRF 狀態
- */
-function checkOriginBoundary(req: VercelApiRequest): OriginCheckResult {
-  const secFetchSiteHeader = req.headers['sec-fetch-site'];
-  const secFetchSite = Array.isArray(secFetchSiteHeader) ? secFetchSiteHeader[0] : secFetchSiteHeader;
-
-  // 現代瀏覽器若明確標記 cross-site 則判定為跨站
-  const isCrossSite = secFetchSite === 'cross-site';
-
-  const rawHost = req.headers['x-forwarded-host'] || req.headers['host'] || '';
-  const hostVal = Array.isArray(rawHost) ? rawHost[0] : rawHost;
-  const requestHost = hostVal.split(':')[0].toLowerCase();
-
-  if (!requestHost) {
-    return { isSameOrigin: false, isCrossSite: true, isLocalDev: false };
-  }
-
-  const rawOrigin = req.headers['origin'];
-  const originVal = Array.isArray(rawOrigin) ? rawOrigin[0] : rawOrigin;
-
-  const rawReferer = req.headers['referer'];
-  const refererVal = Array.isArray(rawReferer) ? rawReferer[0] : rawReferer;
-
-  let clientHost = '';
-  if (originVal) {
-    try {
-      clientHost = new URL(originVal).hostname.toLowerCase();
-    } catch {
-      return { isSameOrigin: false, isCrossSite: true, isLocalDev: false };
-    }
-  } else if (refererVal) {
-    try {
-      clientHost = new URL(refererVal).hostname.toLowerCase();
-    } catch {
-      return { isSameOrigin: false, isCrossSite: true, isLocalDev: false };
-    }
-  }
-
-  const isLocalHost = (h: string) => h === 'localhost' || h === '127.0.0.1';
-  const isLocalDev = isLocalHost(requestHost) || isLocalHost(clientHost);
-
-  // 跨站請求拒絕
-  if (isCrossSite) {
-    return { isSameOrigin: false, isCrossSite: true, isLocalDev };
-  }
-
-  // 檢查 Origin / Referer 主機是否與 Request 主機一致
-  if (clientHost && clientHost === requestHost) {
-    return { isSameOrigin: true, isCrossSite: false, isLocalDev };
-  }
-
-  // 本地開發環境相容 (例如 localhost:5173 呼叫 localhost:3000)
-  if (clientHost && isLocalHost(clientHost) && isLocalHost(requestHost)) {
-    return { isSameOrigin: true, isCrossSite: false, isLocalDev: true };
-  }
-
-  // 若完全無 Origin 與 Referer（非一般同源瀏覽器標準呼叫）
-  return { isSameOrigin: false, isCrossSite: false, isLocalDev };
 }
 
 export default async function handler(
@@ -134,7 +65,18 @@ export default async function handler(
     });
   }
 
-  // 3. 檢查來源環境與 Cookie
+  // 3. 安全防護：徹底移除舊 sessionLogin 入口，防範繞過 /api/session-login Firewall
+  if (action === 'sessionLogin') {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'UNKNOWN_ACTION',
+        message: '未知的請求動作 (action)',
+      },
+    });
+  }
+
+  // 4. 檢查來源環境與 Cookie
   const { isSameOrigin, isCrossSite, isLocalDev } = checkOriginBoundary(req);
   const isSecure = (req.headers['x-forwarded-proto'] === 'https' || process.env.NODE_ENV === 'production') && !isLocalDev;
 
@@ -143,66 +85,8 @@ export default async function handler(
   const sessionSigningSecret = process.env.SESSION_SIGNING_SECRET;
 
   // ----------------------------------------------------
-  // 4. 內部 Session Actions（Vercel 代理本地處理，不轉送 GAS）
+  // 5. 內部 Session 狀態與登出 Actions（不轉送 GAS）
   // ----------------------------------------------------
-
-  if (action === 'sessionLogin') {
-    if (isCrossSite) {
-      return res.status(403).json({
-        ok: false,
-        error: {
-          code: 'FORBIDDEN',
-          message: '拒絕跨來源登入請求',
-        },
-      });
-    }
-
-    if (!isSameOrigin) {
-      return res.status(401).json({
-        ok: false,
-        error: {
-          code: 'UNAUTHORIZED',
-          message: '僅允許同源瀏覽器進行登入',
-        },
-      });
-    }
-
-    const appPassword = process.env.APP_ACCESS_PASSWORD;
-    if (!appPassword || !sessionSigningSecret) {
-      console.error('[Vercel Proxy] 伺服器缺少 APP_ACCESS_PASSWORD 或 SESSION_SIGNING_SECRET 配置');
-      return res.status(500).json({
-        ok: false,
-        error: {
-          code: 'SERVER_CONFIG_ERROR',
-          message: '伺服器存取驗證尚未完成設定',
-        },
-      });
-    }
-
-    const inputPassword = payload.password ? String(payload.password) : '';
-    const isValid = verifyPassword(inputPassword, appPassword);
-
-    if (!isValid) {
-      return res.status(401).json({
-        ok: false,
-        error: {
-          code: 'UNAUTHORIZED',
-          message: '存取密碼不正確',
-        },
-      });
-    }
-
-    // 簽發 Session Token 並寫入 HttpOnly Cookie
-    const token = createSessionToken(sessionSigningSecret);
-    res.setHeader('Set-Cookie', buildSessionCookie(token, isSecure));
-
-    return res.status(200).json({
-      ok: true,
-      data: {
-        authenticated: true,
-      },
-    });
-  }
 
   if (action === 'sessionStatus') {
     let isAuthenticated = false;
@@ -243,7 +127,7 @@ export default async function handler(
   }
 
   // ----------------------------------------------------
-  // 5. 常規業務 Actions（需經過正式授權邊界後轉送 GAS）
+  // 6. 常規業務 Actions（需經過正式授權邊界後轉送 GAS）
   // 授權原則：Internal Key OR (Same-Origin AND Valid Session)
   // ----------------------------------------------------
 
@@ -320,7 +204,7 @@ export default async function handler(
   }
 
   // ----------------------------------------------------
-  // 6. 轉發至 GAS Web App
+  // 7. 轉發至 GAS Web App
   // ----------------------------------------------------
 
   const gasWebAppUrl = process.env.GAS_WEB_APP_URL;

@@ -65,7 +65,11 @@ export const AccessGate: React.FC<AccessGateProps> = ({ children }) => {
       setStatus('authenticated');
     } catch (err: any) {
       if (err instanceof BackendApiError) {
-        setErrorMessage(err.safeMessage);
+        if (err.code === 'RATE_LIMITED') {
+          setErrorMessage('嘗試次數過多，請稍後再試。');
+        } else {
+          setErrorMessage(err.safeMessage);
+        }
       } else {
         setErrorMessage('登入驗證失敗，請稍後再試。');
       }
