@@ -835,6 +835,24 @@ function getOrCreateChildFolder(parentFolder, name) {
 }
 
 /**
+ * 純唯讀尋找子資料夾（若不存在回傳 null，絕不建立資料夾）
+ * @param {GoogleAppsScript.Drive.Folder} parentFolder 上層資料夾
+ * @param {string} name 子資料夾名稱
+ * @return {GoogleAppsScript.Drive.Folder|null}
+ */
+function findChildFolderByName(parentFolder, name) {
+  if (!parentFolder || !parentFolder.getFoldersByName) return null;
+  var it = parentFolder.getFoldersByName(name);
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!f.isTrashed()) {
+      return f;
+    }
+  }
+  return null;
+}
+
+/**
  * 專用內部輔助函式：僅更新 FormRecord 之 excelFileId, pdfFileId, updatedAt
  * 嚴禁調用 handleSaveForm（不遞增 version、不重跑預算商業邏輯）
  * @param {number} year 年度
@@ -1012,8 +1030,8 @@ function handleArchiveFormFiles(payload) {
 }
 
 /**
- * 依據表單編號與檔案類型安全取得已歸檔檔案內容
- * @param {Object} payload { formId: string, fileType: 'excel' | 'pdf', year?: number }
+ * 依據表單編號、檔案類型與可選版本安全取得已歸檔檔案內容
+ * @param {Object} payload { formId: string, fileType: 'excel' | 'pdf', year?: number, version?: number }
  */
 function handleGetArchivedFormFile(payload) {
   if (!payload || !payload.formId) {
@@ -1034,7 +1052,80 @@ function handleGetArchivedFormFile(payload) {
     }
   }
 
+  // 讀取權威 FormRecord
   var formRecord = handleGetForm({ formId: formId, year: year });
+
+  // 檢查是否有指定 version
+  if (payload.version !== undefined && payload.version !== null && String(payload.version).trim() !== '') {
+    // 驗證 version 必須為正整數
+    var verNum = Number(payload.version);
+    if (!Number.isInteger(verNum) || verNum <= 0) {
+      throw createApiError('VALIDATION_ERROR', '版本號必須為正整數: ' + payload.version);
+    }
+
+    var formType = formRecord.formType;
+    var formTypeFolderName = formType === 'payment_request' ? '請款單' : '用印簽呈';
+    var expectedExcelMime = formType === 'payment_request'
+      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      : 'application/vnd.ms-excel.sheet.macroEnabled.12';
+    var targetMime = payload.fileType === 'excel' ? expectedExcelMime : 'application/pdf';
+
+    // 依 Drive hierarchy 尋找檔案：DRIVE_ROOT_FOLDER_ID -> 表單歸檔 -> YYYY -> 請款單/用印簽呈 -> FORM_ID -> vVERSION
+    var rootFolderId = getDriveRootFolderId();
+    var rootFolder = DriveApp.getFolderById(rootFolderId);
+    var archiveRoot = findChildFolderByName(rootFolder, '表單歸檔');
+    if (!archiveRoot) {
+      throw createApiError('NOT_FOUND', '找不到表單歸檔目錄');
+    }
+    var yearFolder = findChildFolderByName(archiveRoot, String(year));
+    if (!yearFolder) {
+      throw createApiError('NOT_FOUND', '找不到該年度之歸檔目錄: ' + year);
+    }
+    var typeFolder = findChildFolderByName(yearFolder, formTypeFolderName);
+    if (!typeFolder) {
+      throw createApiError('NOT_FOUND', '找不到該表單類型之歸檔目錄: ' + formTypeFolderName);
+    }
+    var formFolder = findChildFolderByName(typeFolder, formId);
+    if (!formFolder) {
+      throw createApiError('NOT_FOUND', '找不到該表單之歸檔目錄: ' + formId);
+    }
+    var versionFolder = findChildFolderByName(formFolder, 'v' + verNum);
+    if (!versionFolder) {
+      throw createApiError('NOT_FOUND', '找不到該表單版本目錄: v' + verNum);
+    }
+
+    // 在 versionFolder 內尋找對應 MIME 之 non-trashed file
+    var filesIt = versionFolder.getFiles();
+    var latestMatchFile = null;
+
+    while (filesIt.hasNext()) {
+      var candidateFile = filesIt.next();
+      if (candidateFile.isTrashed()) continue;
+
+      if (candidateFile.getMimeType() === targetMime) {
+        var cTime = candidateFile.getDateCreated ? candidateFile.getDateCreated().getTime() : 0;
+        if (!latestMatchFile || cTime > latestMatchFile.time) {
+          latestMatchFile = { file: candidateFile, time: cTime };
+        }
+      }
+    }
+
+    if (!latestMatchFile) {
+      throw createApiError('NOT_FOUND', '版本 v' + verNum + ' 中找不到對應的 ' + (payload.fileType === 'excel' ? 'Excel/XLSM' : 'PDF') + ' 檔案');
+    }
+
+    var selectedFile = latestMatchFile.file;
+    var blob = selectedFile.getBlob();
+    var base64 = Utilities.base64Encode(blob.getBytes());
+
+    return {
+      fileName: selectedFile.getName(),
+      mimeType: selectedFile.getMimeType() || blob.getContentType(),
+      base64: base64,
+    };
+  }
+
+  // version 未提供：完全保留 Phase 2C-1 向下相容行為
   var targetFileId = payload.fileType === 'excel' ? formRecord.excelFileId : formRecord.pdfFileId;
 
   if (!targetFileId || String(targetFileId).trim() === '') {
@@ -1060,5 +1151,119 @@ function handleGetArchivedFormFile(payload) {
     mimeType: file.getMimeType() || blob.getContentType(),
     base64: base64,
   };
+}
+
+/**
+ * 查詢指定表單在 Google Drive 中的歷史歸檔版本列表（純唯讀）
+ * @param {Object} payload { formId: string, year?: number }
+ * @return {Array<Object>} 依 version 遞減排序的版本列表
+ */
+function handleListArchivedFormVersions(payload) {
+  if (!payload || !payload.formId) {
+    throw createApiError('VALIDATION_ERROR', '缺少表單編號 (formId)');
+  }
+
+  var formId = String(payload.formId).trim();
+  var year = payload.year;
+  if (!year) {
+    var match = formId.match(/^FRM-(\d{4})-/);
+    if (match && match[1]) {
+      year = parseInt(match[1], 10);
+    } else {
+      year = getCurrentYear();
+    }
+  }
+
+  // 1. 讀取權威 FormRecord
+  var authoritativeForm = handleGetForm({ formId: formId, year: year });
+  var formType = authoritativeForm.formType;
+  var currentVersion = authoritativeForm.version ? Number(authoritativeForm.version) : 1;
+  var formTypeFolderName = formType === 'payment_request' ? '請款單' : '用印簽呈';
+  var expectedExcelMime = formType === 'payment_request'
+    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    : 'application/vnd.ms-excel.sheet.macroEnabled.12';
+
+  // 2. 唯讀尋找 Drive 路徑：DRIVE_ROOT_FOLDER_ID -> 表單歸檔 -> YYYY -> 請款單/用印簽呈 -> FORM_ID
+  var rootFolderId = getDriveRootFolderId();
+  var rootFolder = DriveApp.getFolderById(rootFolderId);
+  var archiveRoot = findChildFolderByName(rootFolder, '表單歸檔');
+  if (!archiveRoot) return [];
+
+  var yearFolder = findChildFolderByName(archiveRoot, String(year));
+  if (!yearFolder) return [];
+
+  var typeFolder = findChildFolderByName(yearFolder, formTypeFolderName);
+  if (!typeFolder) return [];
+
+  var formFolder = findChildFolderByName(typeFolder, formId);
+  if (!formFolder) return [];
+
+  // 3. 遍歷 FORM_ID 下之子資料夾，僅接受 /^v([1-9]\d*)$/
+  var versionFoldersIt = formFolder.getFolders();
+  var versionsList = [];
+
+  while (versionFoldersIt.hasNext()) {
+    var vFolder = versionFoldersIt.next();
+    if (vFolder.isTrashed()) continue;
+
+    var folderName = vFolder.getName();
+    var vMatch = folderName.match(/^v([1-9]\d*)$/);
+    if (!vMatch) continue;
+
+    var verNum = parseInt(vMatch[1], 10);
+
+    // 遍歷該 version folder 中的 non-trashed files
+    var filesIt = vFolder.getFiles();
+    var latestExcelFile = null;
+    var latestPdfFile = null;
+
+    while (filesIt.hasNext()) {
+      var file = filesIt.next();
+      if (file.isTrashed()) continue;
+
+      var mime = file.getMimeType();
+      var createdTime = file.getDateCreated ? file.getDateCreated().getTime() : 0;
+
+      if (mime === expectedExcelMime) {
+        if (!latestExcelFile || createdTime > latestExcelFile.time) {
+          latestExcelFile = { file: file, time: createdTime };
+        }
+      } else if (mime === 'application/pdf') {
+        if (!latestPdfFile || createdTime > latestPdfFile.time) {
+          latestPdfFile = { file: file, time: createdTime };
+        }
+      }
+    }
+
+    // 計算 archivedAt：該版本有效 Excel/XLSM/PDF 中最新之 file created time
+    var latestTimestamp = 0;
+    if (latestExcelFile && latestExcelFile.time > latestTimestamp) {
+      latestTimestamp = latestExcelFile.time;
+    }
+    if (latestPdfFile && latestPdfFile.time > latestTimestamp) {
+      latestTimestamp = latestPdfFile.time;
+    }
+
+    var archivedAtStr = latestTimestamp > 0
+      ? Utilities.formatDate(new Date(latestTimestamp), 'Asia/Taipei', 'yyyy/MM/dd HH:mm:ss')
+      : '';
+
+    versionsList.push({
+      version: verNum,
+      isCurrent: verNum === currentVersion,
+      excelAvailable: Boolean(latestExcelFile),
+      pdfAvailable: Boolean(latestPdfFile),
+      excelFileName: latestExcelFile ? latestExcelFile.file.getName() : undefined,
+      pdfFileName: latestPdfFile ? latestPdfFile.file.getName() : undefined,
+      archivedAt: archivedAtStr || undefined,
+    });
+  }
+
+  // 4. 排序：version DESC
+  versionsList.sort(function(a, b) {
+    return b.version - a.version;
+  });
+
+  return versionsList;
 }
 

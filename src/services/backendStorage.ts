@@ -27,6 +27,8 @@ import type {
   ArchiveFormFilesResult,
   GetArchivedFormFilePayload,
   ArchivedFormFileResult,
+  ArchivedVersionItem,
+  ListArchivedFormVersionsPayload,
 } from '../models/backend';
 
 export class BackendStorageService {
@@ -120,6 +122,13 @@ export class BackendStorageService {
    */
   async getArchivedFormFile(query: GetArchivedFormFilePayload): Promise<ArchivedFormFileResult> {
     return backendClient.request<ArchivedFormFileResult, GetArchivedFormFilePayload>('getArchivedFormFile', query);
+  }
+
+  /**
+   * 查詢指定表單在 Google Drive 的歷史歸檔版本列表（純唯讀）
+   */
+  async listArchivedFormVersions(query: ListArchivedFormVersionsPayload): Promise<ArchivedVersionItem[]> {
+    return backendClient.request<ArchivedVersionItem[], ListArchivedFormVersionsPayload>('listArchivedFormVersions', query);
   }
 }
 
