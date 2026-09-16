@@ -34,6 +34,12 @@ import {
 } from 'lucide-react';
 
 
+interface PendingArchiveInfo {
+  formId: string;
+  formType: 'seal' | 'payment';
+  snapshotJson: string;
+}
+
 const MainApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<FormTab>('seal');
   const [sealData, setSealData] = useState<SealApprovalData>(INITIAL_SEAL_APPROVAL_DATA);
@@ -42,7 +48,7 @@ const MainApp: React.FC = () => {
   // 表單後端持久化 ID 追蹤（若有值表示為更新既有表單，若為 null 表示為建立新表單）
   const [currentSealFormId, setCurrentSealFormId] = useState<string | null>(null);
   const [currentPaymentFormId, setCurrentPaymentFormId] = useState<string | null>(null);
-  const [pendingArchiveFormId, setPendingArchiveFormId] = useState<string | null>(null);
+  const [pendingArchive, setPendingArchive] = useState<PendingArchiveInfo | null>(null);
   const [isPaymentOverBudget, setIsPaymentOverBudget] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -205,22 +211,47 @@ const MainApp: React.FC = () => {
     if (!validateForm('write')) return;
     setIsProcessing(true);
 
-    try {
-      let targetFormId = pendingArchiveFormId;
+    const currentFormType = activeTab as 'seal' | 'payment';
+    const currentDataJson = JSON.stringify(currentFormType === 'seal' ? sealData : paymentData);
 
-      // 1. 若先前未曾成功儲存或非重試狀態，先執行表單儲存
-      if (!targetFormId) {
+    // 檢查是否有同表單類型且內容完全未修改之 pending archive
+    const canReusePending = Boolean(
+      pendingArchive &&
+      pendingArchive.formType === currentFormType &&
+      pendingArchive.snapshotJson === currentDataJson &&
+      pendingArchive.formId
+    );
+
+    let targetFormId = canReusePending && pendingArchive ? pendingArchive.formId : '';
+
+    try {
+      // 1. 若非有效的 pending 重試狀態，先執行表單儲存
+      if (!canReusePending) {
         setStatusMessage('正在儲存最新表單資料...');
-        if (activeTab === 'seal') {
-          const res = await storageService.saveSealApproval(sealData, currentSealFormId || undefined);
-          if (!res.id) throw new Error('儲存用印／簽呈後未取得有效表單編號');
-          targetFormId = res.id;
-          setCurrentSealFormId(res.id);
-        } else if (activeTab === 'payment') {
-          const res = await storageService.savePaymentRequest(paymentData, currentPaymentFormId || undefined);
-          if (!res.id) throw new Error('儲存請款單後未取得有效表單編號');
-          targetFormId = res.id;
-          setCurrentPaymentFormId(res.id);
+        try {
+          if (currentFormType === 'seal') {
+            const res = await storageService.saveSealApproval(sealData, currentSealFormId || undefined);
+            if (!res.id) throw new Error('儲存用印／簽呈後未取得有效表單編號');
+            targetFormId = res.id;
+            setCurrentSealFormId(res.id);
+          } else {
+            const res = await storageService.savePaymentRequest(paymentData, currentPaymentFormId || undefined);
+            if (!res.id) throw new Error('儲存請款單後未取得有效表單編號');
+            targetFormId = res.id;
+            setCurrentPaymentFormId(res.id);
+          }
+          // 儲存成功，記錄 pendingArchive 狀態
+          setPendingArchive({
+            formId: targetFormId,
+            formType: currentFormType,
+            snapshotJson: currentDataJson,
+          });
+        } catch (saveErr: any) {
+          // 初始儲存失敗：絕不宣稱表單已妥善儲存！絕不設定 pending archive！
+          setPendingArchive(null);
+          alert(`「完成並產生表單」儲存失敗：${saveErr.message || saveErr}`);
+          setStatusMessage(null);
+          return;
         }
       } else {
         setStatusMessage('偵測到前次已儲存之表單，直接進行產檔與雲端歸檔重試...');
@@ -230,16 +261,13 @@ const MainApp: React.FC = () => {
         throw new Error('未取得有效表單編號，無法進行產檔歸檔');
       }
 
-      // 記住成功儲存之 Form ID，若後續歸檔失敗可直接重試，不再次 save Form / 不累加 version
-      setPendingArchiveFormId(targetFormId);
-
       // 2. 使用現有 generator 產生 Excel/XLSM Blob
       setStatusMessage('正在產生 Excel/XLSM 檔案...');
       let excelBlob: Blob;
       let excelFileName: string;
       let excelMimeType: string;
 
-      if (activeTab === 'seal') {
+      if (currentFormType === 'seal') {
         const baseName = getSealApprovalBaseFilename(sealData.subject, sealData.applyDate, sealData.types);
         excelFileName = `${baseName}.xlsm`;
         excelMimeType = 'application/vnd.ms-excel.sheet.macroEnabled.12';
@@ -257,7 +285,7 @@ const MainApp: React.FC = () => {
       let pdfFileName: string;
       const pdfMimeType = 'application/pdf';
 
-      if (activeTab === 'seal') {
+      if (currentFormType === 'seal') {
         const el = document.getElementById('hidden-seal-view');
         if (!el) throw new Error('找不到用印簽呈列印渲染容器');
         const baseName = getSealApprovalBaseFilename(sealData.subject, sealData.applyDate, sealData.types);
@@ -294,7 +322,7 @@ const MainApp: React.FC = () => {
       });
 
       // 6. archive 成功後，清除 pending 狀態
-      setPendingArchiveFormId(null);
+      setPendingArchive(null);
 
       // 7. 本機下載 Excel/XLSM 與 PDF（重要：本機下載的 Blob 必須就是剛剛上傳歸檔的同一份 Blob）
       downloadBlob(excelBlob, excelFileName);
@@ -303,9 +331,9 @@ const MainApp: React.FC = () => {
       // 8. 正式完成訊息
       setStatusMessage('表單已完成：Excel / PDF 已下載並同步歸檔至雲端');
       setTimeout(() => setStatusMessage(null), 5000);
-    } catch (err: any) {
-      // 失敗 UX：保留已儲存 Form，不 claim 完成，使用者可直接按「完成並產生表單」重試
-      alert(`「完成並產生表單」失敗：${err.message || err}\n\n表單資料已妥善儲存，您可以再次點擊「完成並產生表單」重試雲端歸檔。`);
+    } catch (archiveErr: any) {
+      // 歸檔階段失敗：因 Form Save 已成功，保留 pending 狀態供重試，顯示可重試之明確提示
+      alert(`「完成並產生表單」雲端歸檔失敗：${archiveErr.message || archiveErr}\n\n表單資料已儲存，可再次點擊「完成並產生表單」重試歸檔。`);
       setStatusMessage(null);
     } finally {
       setIsProcessing(false);
@@ -323,14 +351,22 @@ const MainApp: React.FC = () => {
         const res = await storageService.saveSealApproval(sealData, currentSealFormId || undefined);
         if (res.id) {
           setCurrentSealFormId(res.id);
-          setPendingArchiveFormId(res.id);
+          setPendingArchive({
+            formId: res.id,
+            formType: 'seal',
+            snapshotJson: JSON.stringify(sealData),
+          });
         }
         setStatusMessage(currentSealFormId ? '用印／簽呈已成功更新！' : '用印／簽呈已成功儲存！');
       } else if (activeTab === 'payment') {
         const res = await storageService.savePaymentRequest(paymentData, currentPaymentFormId || undefined);
         if (res.id) {
           setCurrentPaymentFormId(res.id);
-          setPendingArchiveFormId(res.id);
+          setPendingArchive({
+            formId: res.id,
+            formType: 'payment',
+            snapshotJson: JSON.stringify(paymentData),
+          });
         }
         setStatusMessage(currentPaymentFormId ? '請款單已成功更新！' : '請款單已成功儲存！');
       }
@@ -349,7 +385,7 @@ const MainApp: React.FC = () => {
       if (confirm('確定要建立全新用印／簽呈表單嗎？未儲存的變更將會遺失。')) {
         setSealData(INITIAL_SEAL_APPROVAL_DATA);
         setCurrentSealFormId(null);
-        setPendingArchiveFormId(null);
+        setPendingArchive(null);
         setErrors({});
         setStatusMessage('已切換為全新用印／簽呈表單');
         setTimeout(() => setStatusMessage(null), 2500);
@@ -358,7 +394,7 @@ const MainApp: React.FC = () => {
       if (confirm('確定要建立全新請款單表單嗎？未儲存的變更將會遺失。')) {
         setPaymentData(INITIAL_PAYMENT_REQUEST_DATA);
         setCurrentPaymentFormId(null);
-        setPendingArchiveFormId(null);
+        setPendingArchive(null);
         setErrors({});
         setStatusMessage('已切換為全新請款單');
         setTimeout(() => setStatusMessage(null), 2500);
@@ -372,7 +408,7 @@ const MainApp: React.FC = () => {
       const hydrated = deserializeSealApproval(record);
       setSealData(hydrated);
       setCurrentSealFormId(record.formId);
-      setPendingArchiveFormId(null);
+      setPendingArchive(null);
       setErrors({});
       setActiveTab('seal');
       setStatusMessage(`已載入用印／簽呈表單：${record.formId}`);
@@ -388,7 +424,7 @@ const MainApp: React.FC = () => {
       const hydrated = deserializePaymentRequest(record);
       setPaymentData(hydrated);
       setCurrentPaymentFormId(record.formId);
-      setPendingArchiveFormId(null);
+      setPendingArchive(null);
       setErrors({});
       setActiveTab('payment');
       setStatusMessage(`已載入請款單表單：${record.formId}`);
@@ -415,14 +451,28 @@ const MainApp: React.FC = () => {
             {activeTab === 'seal' && (
               <SealApprovalForm
                 data={sealData}
-                onChange={setSealData}
+                onChange={(next) => {
+                  setSealData(next);
+                  if (pendingArchive && pendingArchive.formType === 'seal') {
+                    if (JSON.stringify(next) !== pendingArchive.snapshotJson) {
+                      setPendingArchive(null);
+                    }
+                  }
+                }}
                 errors={errors}
               />
             )}
             {activeTab === 'payment' && (
               <PaymentRequestForm
                 data={paymentData}
-                onChange={setPaymentData}
+                onChange={(next) => {
+                  setPaymentData(next);
+                  if (pendingArchive && pendingArchive.formType === 'payment') {
+                    if (JSON.stringify(next) !== pendingArchive.snapshotJson) {
+                      setPendingArchive(null);
+                    }
+                  }
+                }}
                 errors={errors}
                 currentFormId={currentPaymentFormId || undefined}
                 onOverBudgetChange={setIsPaymentOverBudget}

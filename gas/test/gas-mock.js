@@ -169,13 +169,14 @@ class MockBlob {
 }
 
 class MockFile {
-  constructor(id, name, parentFolderId, mimeType, blob) {
+  constructor(id, name, parentFolderId, mimeType, blob, driveContext) {
     this.id = id;
     this.name = name;
     this.parentFolderId = parentFolderId;
     this.mimeType = mimeType || 'application/octet-stream';
     this.blob = blob || new MockBlob([], this.mimeType, name);
     this.trashed = false;
+    this.driveContext = driveContext || null;
   }
 
   getId() {
@@ -200,6 +201,22 @@ class MockFile {
 
   setTrashed(trashed) {
     this.trashed = Boolean(trashed);
+  }
+
+  getParents() {
+    const parentFolder = this.parentFolderId && this.driveContext && this.driveContext.folders
+      ? this.driveContext.folders.get(this.parentFolderId)
+      : null;
+    let done = !parentFolder;
+    return {
+      hasNext() {
+        return !done;
+      },
+      next() {
+        done = true;
+        return parentFolder;
+      }
+    };
   }
 
   moveTo(targetFolder) {
@@ -283,7 +300,7 @@ class MockFolder {
 
   createFile(blob) {
     const id = 'file_' + (this.driveContext.idCounter++);
-    const newFile = new MockFile(id, blob.getName(), this.id, blob.getContentType(), blob);
+    const newFile = new MockFile(id, blob.getName(), this.id, blob.getContentType(), blob, this.driveContext);
     this.driveContext.files.set(id, newFile);
     return newFile;
   }

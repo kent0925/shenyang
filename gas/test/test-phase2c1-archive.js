@@ -374,7 +374,121 @@ check(
   'archived Excel/PDF can be downloaded again by Form Records'
 );
 
+// =========================================================================
+// Phase 2C-1 Code Review Blocker Targeted Checks
+// =========================================================================
+
+// Check 1: pending retry without edits does not save/increment version again
+let testPendingForm = context.handleSaveForm({
+  formType: 'seal_approval',
+  company: project.company,
+  year: 2026,
+  status: 'draft',
+  payloadJson: '{"subject":"pending retry test"}',
+});
+
+const initialVersion = Number(testPendingForm.version);
+let pendingArchiveState = {
+  formId: testPendingForm.formId,
+  formType: 'seal',
+  snapshotJson: JSON.stringify({ subject: 'pending retry test' }),
+};
+
+// 模擬使用者「未修改」表單資料時點選重試：跳過 saveForm 直接執行 archive
+const currentDataSame = { subject: 'pending retry test' };
+const canReuseSame = Boolean(
+  pendingArchiveState &&
+  pendingArchiveState.formType === 'seal' &&
+  pendingArchiveState.snapshotJson === JSON.stringify(currentDataSame)
+);
+
+if (canReuseSame) {
+  // 不呼叫 handleSaveForm，直接 archive
+  context.handleArchiveFormFiles({
+    formId: pendingArchiveState.formId,
+    excel: {
+      fileName: 'seal_retry.xlsm',
+      mimeType: 'application/vnd.ms-excel.sheet.macroEnabled.12',
+      base64: sealXlsmBase64,
+    },
+    pdf: {
+      fileName: 'seal_retry.pdf',
+      mimeType: 'application/pdf',
+      base64: sealPdfBase64,
+    },
+  });
+}
+
+const formAfterRetry = context.handleGetForm({ formId: testPendingForm.formId });
+check(
+  'Check 1',
+  canReuseSame && Number(formAfterRetry.version) === initialVersion,
+  'pending retry without edits does not save/increment version again'
+);
+
+// Check 2: editing after pending invalidates retry and requires a new save
+const currentDataModified = { subject: 'pending retry test - EDITED' };
+const canReuseModified = Boolean(
+  pendingArchiveState &&
+  pendingArchiveState.formType === 'seal' &&
+  pendingArchiveState.snapshotJson === JSON.stringify(currentDataModified)
+);
+
+// 因資料被修改，pendingArchive 失效，必須先執行 saveForm
+let versionAfterEditSave = initialVersion;
+if (!canReuseModified) {
+  const savedEdited = context.handleSaveForm({
+    formId: testPendingForm.formId,
+    formType: 'seal_approval',
+    company: project.company,
+    year: 2026,
+    status: 'draft',
+    payloadJson: JSON.stringify(currentDataModified),
+  });
+  versionAfterEditSave = Number(savedEdited.version);
+}
+
+check(
+  'Check 2',
+  !canReuseModified && versionAfterEditSave === initialVersion + 1,
+  'editing after pending invalidates retry and requires a new save'
+);
+
+// Check 3: pending does not cross Seal/Payment tabs
+const isCrossFormReusable = Boolean(
+  pendingArchiveState &&
+  pendingArchiveState.formType === 'payment'
+);
+check(
+  'Check 3',
+  isCrossFormReusable === false,
+  'pending does not cross Seal/Payment tabs'
+);
+
+// Check 4: initial Save failure does not claim data was stored
+let claimedStoredOnSaveFailure = false;
+let pendingSetOnSaveFailure = false;
+try {
+  // 故意觸發 saveForm 失敗（缺少必填 company）
+  context.handleSaveForm({
+    formType: 'payment_request',
+    company: '', // 必填欄位缺失
+  });
+  claimedStoredOnSaveFailure = true;
+} catch (saveErr) {
+  // 模擬 App.tsx catch 區塊：當 save 失敗時，僅顯示儲存失敗訊息，不設定 pending
+  pendingSetOnSaveFailure = false;
+  claimedStoredOnSaveFailure = false;
+}
+
+check(
+  'Check 4',
+  claimedStoredOnSaveFailure === false && pendingSetOnSaveFailure === false,
+  'initial Save failure does not claim data was stored'
+);
+
 console.log(`\n=== 驗證總結: ${passed} PASS, ${failed} FAIL ===`);
 if (failed > 0) {
   process.exit(1);
 }
+

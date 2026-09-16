@@ -930,15 +930,9 @@ function handleArchiveFormFiles(payload) {
   var formFolder = getOrCreateChildFolder(typeFolder, formId);
   var versionFolder = getOrCreateChildFolder(formFolder, 'v' + version);
 
-  // 依據同版本替換安全原則：先收集當前 versionFolder 中的舊檔案，待新 pair 寫入且 DB 更新成功後再刪除
-  var existingFilesIt = versionFolder.getFiles();
-  var oldFiles = [];
-  while (existingFilesIt.hasNext()) {
-    var existingF = existingFilesIt.next();
-    if (!existingF.isTrashed()) {
-      oldFiles.push(existingF);
-    }
-  }
+  // 記錄先前權威記錄中的檔案編號（用於成功後之同版本精準清理）
+  var priorExcelFileId = authoritativeForm.excelFileId ? String(authoritativeForm.excelFileId).trim() : '';
+  var priorPdfFileId = authoritativeForm.pdfFileId ? String(authoritativeForm.pdfFileId).trim() : '';
 
   var newExcelFile = null;
   var newPdfFile = null;
@@ -967,16 +961,44 @@ function handleArchiveFormFiles(payload) {
     throw archiveErr;
   }
 
-  // 成功後：安全清除同版本舊檔案，確保同一版本維持 deterministic pair
-  for (var i = 0; i < oldFiles.length; i++) {
+  // 成功後：優先僅清理位於「同一版本資料夾」內之先前權威檔案 pair，跨版本舊檔案永久保留！
+  if (priorExcelFileId && priorExcelFileId !== newExcelFile.getId()) {
     try {
-      // 避免誤刪剛建立之新檔案（雖然 ID 不同）
-      if (oldFiles[i].getId() !== newExcelFile.getId() && oldFiles[i].getId() !== newPdfFile.getId()) {
-        oldFiles[i].setTrashed(true);
+      var oldExcelFile = DriveApp.getFileById(priorExcelFileId);
+      var isSameVer = false;
+      var parentsIt = oldExcelFile.getParents ? oldExcelFile.getParents() : null;
+      if (parentsIt && parentsIt.hasNext()) {
+        if (parentsIt.next().getId() === versionFolder.getId()) {
+          isSameVer = true;
+        }
+      } else if (oldExcelFile.parentFolderId) {
+        if (oldExcelFile.parentFolderId === versionFolder.getId()) {
+          isSameVer = true;
+        }
       }
-    } catch (cleanErr) {
-      // 忽略清理舊檔案時之非關鍵異常
-    }
+      if (isSameVer) {
+        oldExcelFile.setTrashed(true);
+      }
+    } catch (cleanExcelErr) {}
+  }
+  if (priorPdfFileId && priorPdfFileId !== newPdfFile.getId()) {
+    try {
+      var oldPdfFile = DriveApp.getFileById(priorPdfFileId);
+      var isSameVerPdf = false;
+      var parentsItPdf = oldPdfFile.getParents ? oldPdfFile.getParents() : null;
+      if (parentsItPdf && parentsItPdf.hasNext()) {
+        if (parentsItPdf.next().getId() === versionFolder.getId()) {
+          isSameVerPdf = true;
+        }
+      } else if (oldPdfFile.parentFolderId) {
+        if (oldPdfFile.parentFolderId === versionFolder.getId()) {
+          isSameVerPdf = true;
+        }
+      }
+      if (isSameVerPdf) {
+        oldPdfFile.setTrashed(true);
+      }
+    } catch (cleanPdfErr) {}
   }
 
   return {
