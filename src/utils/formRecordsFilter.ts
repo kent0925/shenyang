@@ -159,36 +159,24 @@ export function getAvailableVendors(records: FormRecord[]): VendorOption[] {
 
 /**
  * 處理級聯篩選狀態清理 (Cascade Clearing)
- * 當上層條件變更時，清除已不相容的下層 filter，且篩選變更時自動重置回第 1 頁
+ * 當上層條件變更時，強制清除下層 filter，且篩選變更時自動重置回第 1 頁
  */
 export function resolveCascadeFilter(
-  records: FormRecord[],
+  _records: FormRecord[],
   currentState: RecordFilterState,
   change: Partial<RecordFilterState>
 ): RecordFilterState {
   const next = { ...currentState, ...change };
 
-  // 1. 若公司變更，檢查現有 projectId 是否相容
+  // 1. 公司變更：一律強制清空主專案與分案
   if ('selectedCompany' in change && change.selectedCompany !== currentState.selectedCompany) {
-    if (next.selectedProjectId) {
-      const validProjects = getAvailableProjects(records, next.selectedCompany);
-      const isStillValid = validProjects.some((p) => p.projectId === next.selectedProjectId);
-      if (!isStillValid) {
-        next.selectedProjectId = '';
-        next.selectedSubProjectId = '';
-      }
-    }
+    next.selectedProjectId = '';
+    next.selectedSubProjectId = '';
   }
 
-  // 2. 若專案變更，檢查現有 subProjectId 是否相容
+  // 2. 主專案變更：一律強制清空分案
   if ('selectedProjectId' in change && change.selectedProjectId !== currentState.selectedProjectId) {
-    if (next.selectedSubProjectId) {
-      const validSubProjects = getAvailableSubProjects(records, next.selectedProjectId, next.selectedCompany);
-      const isStillValid = validSubProjects.some((sp) => sp.subProjectId === next.selectedSubProjectId);
-      if (!isStillValid) {
-        next.selectedSubProjectId = '';
-      }
-    }
+    next.selectedSubProjectId = '';
   }
 
   // 3. 任何非分頁的篩選、搜尋或排序條件改變，重置回第 1 頁
