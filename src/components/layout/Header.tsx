@@ -4,7 +4,7 @@ import { ShieldCheck, FileSpreadsheet } from 'lucide-react';
 export const Header: React.FC = () => {
   return (
     <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30">
-      <div className="max-w-6xl mx-auto px-4 py-3 sm:px-6 flex items-center justify-between">
+      <div className="max-w-6xl mx-auto px-4 h-16 sm:px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-blue-700 text-white flex items-center justify-center shadow">
             <FileSpreadsheet className="w-6 h-6" />
