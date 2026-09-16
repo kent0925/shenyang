@@ -228,12 +228,28 @@ export interface GetArchivedFormFilePayload {
   formId: string;
   fileType: 'excel' | 'pdf';
   year?: number;
+  version?: number;
 }
 
 export interface ArchivedFormFileResult {
   fileName: string;
   mimeType: string;
   base64: string;
+}
+
+export interface ArchivedVersionItem {
+  version: number;
+  isCurrent: boolean;
+  excelAvailable: boolean;
+  pdfAvailable: boolean;
+  excelFileName?: string;
+  pdfFileName?: string;
+  archivedAt?: string;
+}
+
+export interface ListArchivedFormVersionsPayload {
+  formId: string;
+  year?: number;
 }
 
 // ==========================================

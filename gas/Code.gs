@@ -147,6 +147,10 @@ function doPost(e) {
         resultData = handleGetArchivedFormFile(payload);
         break;
 
+      case 'listArchivedFormVersions':
+        resultData = handleListArchivedFormVersions(payload);
+        break;
+
       default:
         return createErrorResponse('UNKNOWN_ACTION', '未知的請求動作: ' + action);
     }

@@ -177,6 +177,11 @@ class MockFile {
     this.blob = blob || new MockBlob([], this.mimeType, name);
     this.trashed = false;
     this.driveContext = driveContext || null;
+    this.createdAt = new Date();
+  }
+
+  getDateCreated() {
+    return this.createdAt;
   }
 
   getId() {
@@ -247,6 +252,20 @@ class MockFolder {
 
   setTrashed(trashed) {
     this.trashed = Boolean(trashed);
+  }
+
+  getFolders() {
+    const folders = Array.from(this.driveContext.folders.values())
+      .filter(f => f.parentFolderId === this.id && !f.isTrashed());
+    let idx = 0;
+    return {
+      hasNext() {
+        return idx < folders.length;
+      },
+      next() {
+        return folders[idx++];
+      }
+    };
   }
 
   getFoldersByName(name) {
