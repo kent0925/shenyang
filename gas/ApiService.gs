@@ -153,10 +153,35 @@ function handleSaveSubProject(payload) {
   var name = payload.subProjectName ? String(payload.subProjectName).trim() : '';
   if (!projectId) throw createApiError('VALIDATION_ERROR', '專案編號 (projectId) 為必填欄位');
   if (!name) throw createApiError('VALIDATION_ERROR', '分案名稱 (subProjectName) 為必填欄位');
-  var ss = openMasterDatabaseFast();
-  var projectSheet = ss.getSheetByName(SHEETS.PROJECTS);
-  if (findRowIndexById(projectSheet, projectId) === -1) throw createApiError('NOT_FOUND', '找不到專案編號: ' + projectId);
-  var sheet = ss.getSheetByName(SHEETS.SUB_PROJECTS);
+  function failStage(stage, error) {
+    var message = error && error.message ? String(error.message) : String(error);
+    Logger.log('[saveSubProject] stage=' + stage + ' error=' + message);
+    if (error && error.code) throw error;
+    throw createApiError('INTERNAL_ERROR', '儲存分案時發生錯誤');
+  }
+
+  var ss;
+  var projectSheet;
+  Logger.log('[saveSubProject] stage=parent-project-lookup');
+  try {
+    ss = openMasterDatabaseFast();
+    if (!ss) throw new Error('主檔資料庫未設定');
+    projectSheet = ss.getSheetByName(SHEETS.PROJECTS);
+    if (!projectSheet) throw createApiError('CONFIGURATION_ERROR', '找不到專案主檔工作表');
+    if (findRowIndexById(projectSheet, projectId) === -1) throw createApiError('NOT_FOUND', '找不到專案編號: ' + projectId);
+  } catch (error) {
+    failStage('parent-project-lookup', error);
+  }
+
+  var sheet;
+  Logger.log('[saveSubProject] stage=subproject-sheet-lookup');
+  try {
+    sheet = ss.getSheetByName(SHEETS.SUB_PROJECTS);
+    if (!sheet) throw createApiError('CONFIGURATION_ERROR', '找不到分案主檔工作表');
+  } catch (error) {
+    failStage('subproject-sheet-lookup', error);
+  }
+
   var subId = payload.subProjectId ? String(payload.subProjectId).trim() : '';
   if (subId) {
     var rowIndex = findRowIndexById(sheet, subId);
@@ -165,11 +190,42 @@ function handleSaveSubProject(payload) {
     var old = rowToObject(SHEETS.SUB_PROJECTS, sheet.getRange(rowIndex, 1, 1, cols).getValues()[0]);
     if (String(old.projectId) !== projectId) throw createApiError('VALIDATION_ERROR', '分案不可變更所屬專案');
     var updated = { subProjectId: old.subProjectId, projectId: old.projectId, subProjectName: name, status: payload.status || old.status || 'active', createdAt: old.createdAt, updatedAt: getCurrentTimestamp() };
-    sheet.getRange(rowIndex, 1, 1, cols).setValues([objectToRow(SHEETS.SUB_PROJECTS, updated)]);
+    var updatedRow;
+    Logger.log('[saveSubProject] stage=row-serialization');
+    try {
+      updatedRow = objectToRow(SHEETS.SUB_PROJECTS, updated);
+    } catch (error) {
+      failStage('row-serialization', error);
+    }
+    Logger.log('[saveSubProject] stage=sheet-write');
+    try {
+      sheet.getRange(rowIndex, 1, 1, cols).setValues([updatedRow]);
+    } catch (error) {
+      failStage('sheet-write', error);
+    }
     return updated;
   }
-  var created = { subProjectId: getNextId(ID_TYPES.SUB_PROJECT), projectId: projectId, subProjectName: name, status: payload.status ? String(payload.status).trim() : 'active', createdAt: getCurrentTimestamp(), updatedAt: getCurrentTimestamp() };
-  sheet.appendRow(objectToRow(SHEETS.SUB_PROJECTS, created));
+  var subProjectId;
+  Logger.log('[saveSubProject] stage=id-generation');
+  try {
+    subProjectId = getNextId(ID_TYPES.SUB_PROJECT);
+  } catch (error) {
+    failStage('id-generation', error);
+  }
+  var created = { subProjectId: subProjectId, projectId: projectId, subProjectName: name, status: payload.status ? String(payload.status).trim() : 'active', createdAt: getCurrentTimestamp(), updatedAt: getCurrentTimestamp() };
+  var createdRow;
+  Logger.log('[saveSubProject] stage=row-serialization');
+  try {
+    createdRow = objectToRow(SHEETS.SUB_PROJECTS, created);
+  } catch (error) {
+    failStage('row-serialization', error);
+  }
+  Logger.log('[saveSubProject] stage=sheet-write');
+  try {
+    sheet.appendRow(createdRow);
+  } catch (error) {
+    failStage('sheet-write', error);
+  }
   return created;
 }
 
