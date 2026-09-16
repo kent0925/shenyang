@@ -20,6 +20,8 @@ import { getSealApprovalBaseFilename, getPaymentRequestBaseFilename } from './ut
 import { validateTaxId } from './services/companyLookup';
 import { parseSafeAmount } from './services/budgetUsage';
 import { validatePaymentHierarchy, PaymentValidationMode } from './services/paymentValidation';
+import { backendStorageService } from './services/backendStorage';
+import { blobToBase64, downloadBlob } from './utils/fileBlob';
 import {
   Eye,
   FileSpreadsheet,
@@ -40,6 +42,7 @@ const MainApp: React.FC = () => {
   // 表單後端持久化 ID 追蹤（若有值表示為更新既有表單，若為 null 表示為建立新表單）
   const [currentSealFormId, setCurrentSealFormId] = useState<string | null>(null);
   const [currentPaymentFormId, setCurrentPaymentFormId] = useState<string | null>(null);
+  const [pendingArchiveFormId, setPendingArchiveFormId] = useState<string | null>(null);
   const [isPaymentOverBudget, setIsPaymentOverBudget] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -50,17 +53,6 @@ const MainApp: React.FC = () => {
   const sealPdfRef = useRef<HTMLDivElement>(null);
   const paymentPdfRef = useRef<HTMLDivElement>(null);
 
-  // 下載 Blob 檔案之通用輔助函式
-  const downloadBlob = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
 
   // 必填欄位驗證
   const validateForm = (mode: PaymentValidationMode = 'read'): boolean => {
@@ -208,6 +200,118 @@ const MainApp: React.FC = () => {
     }
   };
 
+  // 官方主要正式動作：完成並產生表單（儲存最新 Form -> 產出雙檔 -> 同時歸檔 Google Drive -> 回寫 IDs -> 本機下載雙檔）
+  const handleCompleteAndGenerate = async () => {
+    if (!validateForm('write')) return;
+    setIsProcessing(true);
+
+    try {
+      let targetFormId = pendingArchiveFormId;
+
+      // 1. 若先前未曾成功儲存或非重試狀態，先執行表單儲存
+      if (!targetFormId) {
+        setStatusMessage('正在儲存最新表單資料...');
+        if (activeTab === 'seal') {
+          const res = await storageService.saveSealApproval(sealData, currentSealFormId || undefined);
+          if (!res.id) throw new Error('儲存用印／簽呈後未取得有效表單編號');
+          targetFormId = res.id;
+          setCurrentSealFormId(res.id);
+        } else if (activeTab === 'payment') {
+          const res = await storageService.savePaymentRequest(paymentData, currentPaymentFormId || undefined);
+          if (!res.id) throw new Error('儲存請款單後未取得有效表單編號');
+          targetFormId = res.id;
+          setCurrentPaymentFormId(res.id);
+        }
+      } else {
+        setStatusMessage('偵測到前次已儲存之表單，直接進行產檔與雲端歸檔重試...');
+      }
+
+      if (!targetFormId) {
+        throw new Error('未取得有效表單編號，無法進行產檔歸檔');
+      }
+
+      // 記住成功儲存之 Form ID，若後續歸檔失敗可直接重試，不再次 save Form / 不累加 version
+      setPendingArchiveFormId(targetFormId);
+
+      // 2. 使用現有 generator 產生 Excel/XLSM Blob
+      setStatusMessage('正在產生 Excel/XLSM 檔案...');
+      let excelBlob: Blob;
+      let excelFileName: string;
+      let excelMimeType: string;
+
+      if (activeTab === 'seal') {
+        const baseName = getSealApprovalBaseFilename(sealData.subject, sealData.applyDate, sealData.types);
+        excelFileName = `${baseName}.xlsm`;
+        excelMimeType = 'application/vnd.ms-excel.sheet.macroEnabled.12';
+        excelBlob = await generateSealApprovalExcel(sealData);
+      } else {
+        const baseName = getPaymentRequestBaseFilename(paymentData.project, paymentData.vendor, paymentData.applyDate);
+        excelFileName = `${baseName}.xlsx`;
+        excelMimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        excelBlob = await generatePaymentRequestExcel(paymentData);
+      }
+
+      // 3. 使用現有 PDF generator 產生 PDF Blob
+      setStatusMessage('正在排版並產生 PDF 檔案...');
+      let pdfBlob: Blob;
+      let pdfFileName: string;
+      const pdfMimeType = 'application/pdf';
+
+      if (activeTab === 'seal') {
+        const el = document.getElementById('hidden-seal-view');
+        if (!el) throw new Error('找不到用印簽呈列印渲染容器');
+        const baseName = getSealApprovalBaseFilename(sealData.subject, sealData.applyDate, sealData.types);
+        pdfFileName = `${baseName}.pdf`;
+        pdfBlob = await generatePdfFromElement(el, pdfFileName);
+      } else {
+        const el = document.getElementById('hidden-payment-view');
+        if (!el) throw new Error('找不到請款單列印渲染容器');
+        const baseName = getPaymentRequestBaseFilename(paymentData.project, paymentData.vendor, paymentData.applyDate);
+        pdfFileName = `${baseName}.pdf`;
+        pdfBlob = await generatePdfFromElement(el, pdfFileName);
+      }
+
+      // 4. 將兩個 Blob 轉為 raw base64
+      setStatusMessage('正在同步上傳歸檔至 Google Drive...');
+      const [excelBase64, pdfBase64] = await Promise.all([
+        blobToBase64(excelBlob),
+        blobToBase64(pdfBlob),
+      ]);
+
+      // 5. 呼叫後端歸檔 API（單一請求原子操作）
+      await backendStorageService.archiveFormFiles({
+        formId: targetFormId,
+        excel: {
+          fileName: excelFileName,
+          mimeType: excelMimeType,
+          base64: excelBase64,
+        },
+        pdf: {
+          fileName: pdfFileName,
+          mimeType: pdfMimeType,
+          base64: pdfBase64,
+        },
+      });
+
+      // 6. archive 成功後，清除 pending 狀態
+      setPendingArchiveFormId(null);
+
+      // 7. 本機下載 Excel/XLSM 與 PDF（重要：本機下載的 Blob 必須就是剛剛上傳歸檔的同一份 Blob）
+      downloadBlob(excelBlob, excelFileName);
+      downloadBlob(pdfBlob, pdfFileName);
+
+      // 8. 正式完成訊息
+      setStatusMessage('表單已完成：Excel / PDF 已下載並同步歸檔至雲端');
+      setTimeout(() => setStatusMessage(null), 5000);
+    } catch (err: any) {
+      // 失敗 UX：保留已儲存 Form，不 claim 完成，使用者可直接按「完成並產生表單」重試
+      alert(`「完成並產生表單」失敗：${err.message || err}\n\n表單資料已妥善儲存，您可以再次點擊「完成並產生表單」重試雲端歸檔。`);
+      setStatusMessage(null);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // 0. 儲存表單至後端資料庫
   const handleSaveForm = async () => {
     if (!validateForm('write')) return;
@@ -219,12 +323,14 @@ const MainApp: React.FC = () => {
         const res = await storageService.saveSealApproval(sealData, currentSealFormId || undefined);
         if (res.id) {
           setCurrentSealFormId(res.id);
+          setPendingArchiveFormId(res.id);
         }
         setStatusMessage(currentSealFormId ? '用印／簽呈已成功更新！' : '用印／簽呈已成功儲存！');
       } else if (activeTab === 'payment') {
         const res = await storageService.savePaymentRequest(paymentData, currentPaymentFormId || undefined);
         if (res.id) {
           setCurrentPaymentFormId(res.id);
+          setPendingArchiveFormId(res.id);
         }
         setStatusMessage(currentPaymentFormId ? '請款單已成功更新！' : '請款單已成功儲存！');
       }
@@ -243,6 +349,7 @@ const MainApp: React.FC = () => {
       if (confirm('確定要建立全新用印／簽呈表單嗎？未儲存的變更將會遺失。')) {
         setSealData(INITIAL_SEAL_APPROVAL_DATA);
         setCurrentSealFormId(null);
+        setPendingArchiveFormId(null);
         setErrors({});
         setStatusMessage('已切換為全新用印／簽呈表單');
         setTimeout(() => setStatusMessage(null), 2500);
@@ -251,6 +358,7 @@ const MainApp: React.FC = () => {
       if (confirm('確定要建立全新請款單表單嗎？未儲存的變更將會遺失。')) {
         setPaymentData(INITIAL_PAYMENT_REQUEST_DATA);
         setCurrentPaymentFormId(null);
+        setPendingArchiveFormId(null);
         setErrors({});
         setStatusMessage('已切換為全新請款單');
         setTimeout(() => setStatusMessage(null), 2500);
@@ -264,6 +372,7 @@ const MainApp: React.FC = () => {
       const hydrated = deserializeSealApproval(record);
       setSealData(hydrated);
       setCurrentSealFormId(record.formId);
+      setPendingArchiveFormId(null);
       setErrors({});
       setActiveTab('seal');
       setStatusMessage(`已載入用印／簽呈表單：${record.formId}`);
@@ -279,6 +388,7 @@ const MainApp: React.FC = () => {
       const hydrated = deserializePaymentRequest(record);
       setPaymentData(hydrated);
       setCurrentPaymentFormId(record.formId);
+      setPendingArchiveFormId(null);
       setErrors({});
       setActiveTab('payment');
       setStatusMessage(`已載入請款單表單：${record.formId}`);
@@ -381,17 +491,29 @@ const MainApp: React.FC = () => {
               </button>
             </div>
 
-            {/* 操作按鈕群：Mobile 採兩列結構，Desktop 單列 */}
+            {/* 操作按鈕群：Mobile 採分列結構，Desktop 單列 */}
             <div className="w-full sm:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              {/* 第一層：核心主操作（儲存、預覽） */}
+              {/* 官方核心主操作：完成並產生表單（一鍵完成：儲存+產檔+雲端歸檔+本機雙檔下載） */}
+              <button
+                type="button"
+                onClick={handleCompleteAndGenerate}
+                disabled={isProcessing}
+                className="flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-xl text-sm font-bold transition shadow-md active:scale-95 disabled:opacity-50 min-h-[42px]"
+                title="儲存最新表單、產生 Excel/XLSM 及 PDF、同步歸檔至 Google Drive 並於本機下載"
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                <span>完成並產生表單</span>
+              </button>
+
+              {/* 次要操作（儲存、預覽） */}
               <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
                 <button
                   type="button"
                   onClick={handleSaveForm}
                   disabled={isProcessing}
-                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition shadow-sm active:scale-95 disabled:opacity-50 min-h-[42px]"
+                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-medium transition active:scale-95 disabled:opacity-50 min-h-[40px]"
                 >
-                  <CloudUpload className="w-4 h-4" />
+                  <CloudUpload className="w-4 h-4 text-blue-600" />
                   <span>儲存表單</span>
                 </button>
 
@@ -399,20 +521,20 @@ const MainApp: React.FC = () => {
                   type="button"
                   onClick={handlePreview}
                   disabled={isProcessing}
-                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-medium transition active:scale-95 disabled:opacity-50 min-h-[42px]"
+                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-medium transition active:scale-95 disabled:opacity-50 min-h-[40px]"
                 >
                   <Eye className="w-4 h-4 text-slate-600" />
                   <span>預覽</span>
                 </button>
               </div>
 
-              {/* 第二層：下載操作（Excel、PDF、兩者） */}
+              {/* 下載操作（Excel、PDF、兩者） */}
               <div className="grid grid-cols-3 sm:flex sm:items-center gap-1.5 sm:gap-2">
                 <button
                   type="button"
                   onClick={handleDownloadExcel}
                   disabled={isProcessing}
-                  className="flex items-center justify-center gap-1 px-2.5 sm:px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-medium transition shadow-sm active:scale-95 disabled:opacity-50 min-h-[40px]"
+                  className="flex items-center justify-center gap-1 px-2.5 sm:px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-medium transition shadow-sm active:scale-95 disabled:opacity-50 min-h-[40px]"
                   title="下載 Excel"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -424,7 +546,7 @@ const MainApp: React.FC = () => {
                   type="button"
                   onClick={handleDownloadPdf}
                   disabled={isProcessing}
-                  className="flex items-center justify-center gap-1 px-2.5 sm:px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs sm:text-sm font-medium transition shadow-sm active:scale-95 disabled:opacity-50 min-h-[40px]"
+                  className="flex items-center justify-center gap-1 px-2.5 sm:px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs sm:text-sm font-medium transition shadow-sm active:scale-95 disabled:opacity-50 min-h-[40px]"
                   title="下載 PDF"
                 >
                   <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -436,7 +558,7 @@ const MainApp: React.FC = () => {
                   type="button"
                   onClick={handleDownloadBoth}
                   disabled={isProcessing}
-                  className="flex items-center justify-center gap-1 px-2.5 sm:px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs sm:text-sm font-semibold transition shadow-md active:scale-95 disabled:opacity-50 min-h-[40px]"
+                  className="flex items-center justify-center gap-1 px-2.5 sm:px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs sm:text-sm font-semibold transition shadow-md active:scale-95 disabled:opacity-50 min-h-[40px]"
                   title="同時下載 Excel 與 PDF"
                 >
                   <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
