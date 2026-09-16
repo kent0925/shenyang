@@ -199,7 +199,45 @@ export interface SaveFormPayload {
 }
 
 // ==========================================
-// 5. 系統健康檢查 (Health)
+// 5. 檔案歸檔與讀取 (Archive & File Retrieval)
+// ==========================================
+
+export interface ArchiveFileSpec {
+  fileName: string;
+  mimeType: string;
+  base64: string;
+}
+
+export interface ArchiveFormFilesPayload {
+  formId: string;
+  year?: number;
+  excel: ArchiveFileSpec;
+  pdf: ArchiveFileSpec;
+}
+
+export interface ArchiveFormFilesResult {
+  formId: string;
+  version: number;
+  excelFileId: string;
+  pdfFileId: string;
+  excelFileName: string;
+  pdfFileName: string;
+}
+
+export interface GetArchivedFormFilePayload {
+  formId: string;
+  fileType: 'excel' | 'pdf';
+  year?: number;
+}
+
+export interface ArchivedFormFileResult {
+  fileName: string;
+  mimeType: string;
+  base64: string;
+}
+
+// ==========================================
+// 6. 系統健康檢查 (Health)
 // ==========================================
 
 export interface BackendHealthData {
@@ -208,3 +246,4 @@ export interface BackendHealthData {
   schemaVersion: string;
   currentYear: string;
 }
+

@@ -139,6 +139,14 @@ function doPost(e) {
         resultData = handleSaveForm(payload);
         break;
 
+      case 'archiveFormFiles':
+        resultData = handleArchiveFormFiles(payload);
+        break;
+
+      case 'getArchivedFormFile':
+        resultData = handleGetArchivedFormFile(payload);
+        break;
+
       default:
         return createErrorResponse('UNKNOWN_ACTION', '未知的請求動作: ' + action);
     }

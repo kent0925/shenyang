@@ -816,3 +816,249 @@ function handleSaveForm(payload) {
     }
   }
 }
+
+/**
+ * 冪等取得或建立子資料夾（避免產生重複的 (1) 資料夾）
+ * @param {GoogleAppsScript.Drive.Folder} parentFolder 上層資料夾
+ * @param {string} name 子資料夾名稱
+ * @return {GoogleAppsScript.Drive.Folder}
+ */
+function getOrCreateChildFolder(parentFolder, name) {
+  var it = parentFolder.getFoldersByName(name);
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!f.isTrashed()) {
+      return f;
+    }
+  }
+  return parentFolder.createFolder(name);
+}
+
+/**
+ * 專用內部輔助函式：僅更新 FormRecord 之 excelFileId, pdfFileId, updatedAt
+ * 嚴禁調用 handleSaveForm（不遞增 version、不重跑預算商業邏輯）
+ * @param {number} year 年度
+ * @param {string} formId 表單編號
+ * @param {string} excelFileId Excel 檔案 Drive ID
+ * @param {string} pdfFileId PDF 檔案 Drive ID
+ * @return {Object} 更新後之表單物件
+ */
+function updateFormArchivedFileIds(year, formId, excelFileId, pdfFileId) {
+  var yearSs = getYearDatabase(year);
+  if (!yearSs) {
+    throw createApiError('NOT_FOUND', '找不到表單年度資料庫: ' + year);
+  }
+
+  var sheet = yearSs.getSheetByName(SHEETS.FORMS);
+  if (!sheet) {
+    throw createApiError('NOT_FOUND', '找不到表單工作表');
+  }
+
+  var rowIndex = findRowIndexById(sheet, formId);
+  if (rowIndex === -1) {
+    throw createApiError('NOT_FOUND', '找不到表單: ' + formId);
+  }
+
+  var numCols = SCHEMAS[SHEETS.FORMS].columns.length;
+  var rowValues = sheet.getRange(rowIndex, 1, 1, numCols).getValues()[0];
+  var existingObj = rowToObject(SHEETS.FORMS, rowValues);
+
+  // 僅更新 excelFileId、pdfFileId 與 updatedAt，嚴格保留所有其他欄位與 version
+  existingObj.excelFileId = String(excelFileId).trim();
+  existingObj.pdfFileId = String(pdfFileId).trim();
+  existingObj.updatedAt = getCurrentTimestamp();
+
+  var updatedRow = objectToRow(SHEETS.FORMS, existingObj);
+  sheet.getRange(rowIndex, 1, 1, updatedRow.length).setValues([updatedRow]);
+  return existingObj;
+}
+
+/**
+ * Phase 2C-1 表單檔案雲端歸檔 API 處理器
+ * @param {Object} payload 包含 formId, year, excel, pdf 之請求酬載
+ */
+function handleArchiveFormFiles(payload) {
+  if (!payload || !payload.formId) {
+    throw createApiError('VALIDATION_ERROR', '缺少表單編號 (formId)');
+  }
+  if (!payload.excel || !payload.excel.fileName || !payload.excel.base64 || !payload.excel.mimeType) {
+    throw createApiError('VALIDATION_ERROR', '缺少 Excel/XLSM 檔案資訊或內容');
+  }
+  if (!payload.pdf || !payload.pdf.fileName || !payload.pdf.base64 || !payload.pdf.mimeType) {
+    throw createApiError('VALIDATION_ERROR', '缺少 PDF 檔案資訊或內容');
+  }
+
+  var formId = String(payload.formId).trim();
+  var year = payload.year;
+  if (!year) {
+    var match = formId.match(/^FRM-(\d{4})-/);
+    if (match && match[1]) {
+      year = parseInt(match[1], 10);
+    } else {
+      year = getCurrentYear();
+    }
+  }
+
+  // 讀取 authoritative FormRecord（不相信 client 傳來的 formType/version）
+  var authoritativeForm = handleGetForm({ formId: formId, year: year });
+
+  // 依據 authoritative formType 強制驗證 MIME 類型
+  var expectedExcelMime = authoritativeForm.formType === 'payment_request'
+    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    : 'application/vnd.ms-excel.sheet.macroEnabled.12';
+
+  if (payload.excel.mimeType !== expectedExcelMime) {
+    throw createApiError(
+      'VALIDATION_ERROR',
+      'Excel MIME 類型不符: ' + payload.excel.mimeType + ' (預期: ' + expectedExcelMime + ')'
+    );
+  }
+  if (payload.pdf.mimeType !== 'application/pdf') {
+    throw createApiError('VALIDATION_ERROR', 'PDF MIME 類型不符: ' + payload.pdf.mimeType + ' (預期: application/pdf)');
+  }
+
+  var version = authoritativeForm.version ? Number(authoritativeForm.version) : 1;
+  var formTypeFolderName = authoritativeForm.formType === 'payment_request' ? '請款單' : '用印簽呈';
+
+  // 依據階層取得／建立 Drive 資料夾
+  // DRIVE_ROOT_FOLDER_ID -> 表單歸檔 -> YYYY -> 請款單/用印簽呈 -> FORM_ID -> vVERSION
+  var rootFolderId = getDriveRootFolderId();
+  var rootFolder = DriveApp.getFolderById(rootFolderId);
+  var archiveRoot = getOrCreateChildFolder(rootFolder, '表單歸檔');
+  var yearFolder = getOrCreateChildFolder(archiveRoot, String(year));
+  var typeFolder = getOrCreateChildFolder(yearFolder, formTypeFolderName);
+  var formFolder = getOrCreateChildFolder(typeFolder, formId);
+  var versionFolder = getOrCreateChildFolder(formFolder, 'v' + version);
+
+  // 記錄先前權威記錄中的檔案編號（用於成功後之同版本精準清理）
+  var priorExcelFileId = authoritativeForm.excelFileId ? String(authoritativeForm.excelFileId).trim() : '';
+  var priorPdfFileId = authoritativeForm.pdfFileId ? String(authoritativeForm.pdfFileId).trim() : '';
+
+  var newExcelFile = null;
+  var newPdfFile = null;
+
+  try {
+    // 建立新 Excel/XLSM 檔案
+    var excelBytes = Utilities.base64Decode(payload.excel.base64);
+    var excelBlob = Utilities.newBlob(excelBytes, payload.excel.mimeType, payload.excel.fileName);
+    newExcelFile = versionFolder.createFile(excelBlob);
+
+    // 建立新 PDF 檔案
+    var pdfBytes = Utilities.base64Decode(payload.pdf.base64);
+    var pdfBlob = Utilities.newBlob(pdfBytes, payload.pdf.mimeType, payload.pdf.fileName);
+    newPdfFile = versionFolder.createFile(pdfBlob);
+
+    // 原子性更新 FormRecord
+    updateFormArchivedFileIds(year, formId, newExcelFile.getId(), newPdfFile.getId());
+  } catch (archiveErr) {
+    // 原子性回滾：若任何步驟失敗，trash 本次新建立的檔案，絕不更動 FormRecord 與舊檔案
+    if (newExcelFile) {
+      try { newExcelFile.setTrashed(true); } catch (e) {}
+    }
+    if (newPdfFile) {
+      try { newPdfFile.setTrashed(true); } catch (e) {}
+    }
+    throw archiveErr;
+  }
+
+  // 成功後：優先僅清理位於「同一版本資料夾」內之先前權威檔案 pair，跨版本舊檔案永久保留！
+  if (priorExcelFileId && priorExcelFileId !== newExcelFile.getId()) {
+    try {
+      var oldExcelFile = DriveApp.getFileById(priorExcelFileId);
+      var isSameVer = false;
+      var parentsIt = oldExcelFile.getParents ? oldExcelFile.getParents() : null;
+      if (parentsIt && parentsIt.hasNext()) {
+        if (parentsIt.next().getId() === versionFolder.getId()) {
+          isSameVer = true;
+        }
+      } else if (oldExcelFile.parentFolderId) {
+        if (oldExcelFile.parentFolderId === versionFolder.getId()) {
+          isSameVer = true;
+        }
+      }
+      if (isSameVer) {
+        oldExcelFile.setTrashed(true);
+      }
+    } catch (cleanExcelErr) {}
+  }
+  if (priorPdfFileId && priorPdfFileId !== newPdfFile.getId()) {
+    try {
+      var oldPdfFile = DriveApp.getFileById(priorPdfFileId);
+      var isSameVerPdf = false;
+      var parentsItPdf = oldPdfFile.getParents ? oldPdfFile.getParents() : null;
+      if (parentsItPdf && parentsItPdf.hasNext()) {
+        if (parentsItPdf.next().getId() === versionFolder.getId()) {
+          isSameVerPdf = true;
+        }
+      } else if (oldPdfFile.parentFolderId) {
+        if (oldPdfFile.parentFolderId === versionFolder.getId()) {
+          isSameVerPdf = true;
+        }
+      }
+      if (isSameVerPdf) {
+        oldPdfFile.setTrashed(true);
+      }
+    } catch (cleanPdfErr) {}
+  }
+
+  return {
+    formId: formId,
+    version: version,
+    excelFileId: newExcelFile.getId(),
+    pdfFileId: newPdfFile.getId(),
+    excelFileName: payload.excel.fileName,
+    pdfFileName: payload.pdf.fileName,
+  };
+}
+
+/**
+ * 依據表單編號與檔案類型安全取得已歸檔檔案內容
+ * @param {Object} payload { formId: string, fileType: 'excel' | 'pdf', year?: number }
+ */
+function handleGetArchivedFormFile(payload) {
+  if (!payload || !payload.formId) {
+    throw createApiError('VALIDATION_ERROR', '缺少表單編號 (formId)');
+  }
+  if (!payload.fileType || (payload.fileType !== 'excel' && payload.fileType !== 'pdf')) {
+    throw createApiError('VALIDATION_ERROR', '無效或未指定之檔案類型 (fileType: excel / pdf)');
+  }
+
+  var formId = String(payload.formId).trim();
+  var year = payload.year;
+  if (!year) {
+    var match = formId.match(/^FRM-(\d{4})-/);
+    if (match && match[1]) {
+      year = parseInt(match[1], 10);
+    } else {
+      year = getCurrentYear();
+    }
+  }
+
+  var formRecord = handleGetForm({ formId: formId, year: year });
+  var targetFileId = payload.fileType === 'excel' ? formRecord.excelFileId : formRecord.pdfFileId;
+
+  if (!targetFileId || String(targetFileId).trim() === '') {
+    throw createApiError('NOT_FOUND', '此表單尚未歸檔 ' + (payload.fileType === 'excel' ? 'Excel/XLSM' : 'PDF') + ' 檔案');
+  }
+
+  var file;
+  try {
+    file = DriveApp.getFileById(String(targetFileId).trim());
+  } catch (e) {
+    throw createApiError('NOT_FOUND', '找不到已歸檔的雲端檔案');
+  }
+
+  if (file.isTrashed && file.isTrashed()) {
+    throw createApiError('NOT_FOUND', '已歸檔之雲端檔案已遭移除');
+  }
+
+  var blob = file.getBlob();
+  var base64 = Utilities.base64Encode(blob.getBytes());
+
+  return {
+    fileName: file.getName(),
+    mimeType: file.getMimeType() || blob.getContentType(),
+    base64: base64,
+  };
+}
+

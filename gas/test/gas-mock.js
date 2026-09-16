@@ -148,10 +148,87 @@ class MockSpreadsheet {
   }
 }
 
+class MockBlob {
+  constructor(bytes, mimeType, name) {
+    this.bytes = bytes;
+    this.mimeType = mimeType;
+    this.name = name;
+  }
+
+  getBytes() {
+    return this.bytes;
+  }
+
+  getContentType() {
+    return this.mimeType;
+  }
+
+  getName() {
+    return this.name;
+  }
+}
+
 class MockFile {
-  constructor(id, name, parentFolderId) {
+  constructor(id, name, parentFolderId, mimeType, blob, driveContext) {
     this.id = id;
     this.name = name;
+    this.parentFolderId = parentFolderId;
+    this.mimeType = mimeType || 'application/octet-stream';
+    this.blob = blob || new MockBlob([], this.mimeType, name);
+    this.trashed = false;
+    this.driveContext = driveContext || null;
+  }
+
+  getId() {
+    return this.id;
+  }
+
+  getName() {
+    return this.name;
+  }
+
+  getMimeType() {
+    return this.mimeType;
+  }
+
+  getBlob() {
+    return this.blob;
+  }
+
+  isTrashed() {
+    return this.trashed;
+  }
+
+  setTrashed(trashed) {
+    this.trashed = Boolean(trashed);
+  }
+
+  getParents() {
+    const parentFolder = this.parentFolderId && this.driveContext && this.driveContext.folders
+      ? this.driveContext.folders.get(this.parentFolderId)
+      : null;
+    let done = !parentFolder;
+    return {
+      hasNext() {
+        return !done;
+      },
+      next() {
+        done = true;
+        return parentFolder;
+      }
+    };
+  }
+
+  moveTo(targetFolder) {
+    this.parentFolderId = targetFolder.getId();
+  }
+}
+
+class MockFolder {
+  constructor(id, name, driveContext, parentFolderId = null) {
+    this.id = id;
+    this.name = name;
+    this.driveContext = driveContext;
     this.parentFolderId = parentFolderId;
     this.trashed = false;
   }
@@ -168,24 +245,43 @@ class MockFile {
     return this.trashed;
   }
 
-  moveTo(targetFolder) {
-    this.parentFolderId = targetFolder.getId();
-  }
-}
-
-class MockFolder {
-  constructor(id, name, driveContext) {
-    this.id = id;
-    this.name = name;
-    this.driveContext = driveContext;
+  setTrashed(trashed) {
+    this.trashed = Boolean(trashed);
   }
 
-  getId() {
-    return this.id;
+  getFoldersByName(name) {
+    const folders = Array.from(this.driveContext.folders.values())
+      .filter(f => f.parentFolderId === this.id && f.getName() === name && !f.isTrashed());
+    let idx = 0;
+    return {
+      hasNext() {
+        return idx < folders.length;
+      },
+      next() {
+        return folders[idx++];
+      }
+    };
   }
 
-  getName() {
-    return this.name;
+  createFolder(name) {
+    const id = 'folder_' + (this.driveContext.idCounter++);
+    const newFolder = new MockFolder(id, name, this.driveContext, this.id);
+    this.driveContext.folders.set(id, newFolder);
+    return newFolder;
+  }
+
+  getFiles() {
+    const files = Array.from(this.driveContext.files.values())
+      .filter(f => f.parentFolderId === this.id && !f.isTrashed());
+    let idx = 0;
+    return {
+      hasNext() {
+        return idx < files.length;
+      },
+      next() {
+        return files[idx++];
+      }
+    };
   }
 
   getFilesByName(name) {
@@ -202,6 +298,13 @@ class MockFolder {
     };
   }
 
+  createFile(blob) {
+    const id = 'file_' + (this.driveContext.idCounter++);
+    const newFile = new MockFile(id, blob.getName(), this.id, blob.getContentType(), blob, this.driveContext);
+    this.driveContext.files.set(id, newFile);
+    return newFile;
+  }
+
   addFile(file) {
     file.parentFolderId = this.id;
   }
@@ -214,11 +317,10 @@ export function createGasEnvironment(initialProperties = {}) {
   const folders = new Map(); // id -> MockFolder
   const rootFolderId = properties.DRIVE_ROOT_FOLDER_ID || 'mock-root-folder-id';
   
-  const driveContext = { files, folders };
+  let idCounter = 1000;
+  const driveContext = { files, folders, get idCounter() { return idCounter; }, set idCounter(v) { idCounter = v; } };
   const rootFolder = new MockFolder(rootFolderId, '公司表單系統', driveContext);
   folders.set(rootFolderId, rootFolder);
-
-  let idCounter = 1000;
 
   const PropertiesService = {
     getScriptProperties() {
@@ -326,6 +428,21 @@ export function createGasEnvironment(initialProperties = {}) {
     }
   };
 
+  const Utilities = {
+    base64Decode(str) {
+      return Array.from(Buffer.from(str, 'base64'));
+    },
+    newBlob(bytes, mimeType, name) {
+      return new MockBlob(bytes, mimeType, name);
+    },
+    base64Encode(bytes) {
+      return Buffer.from(bytes).toString('base64');
+    },
+    formatDate(date, timeZone, format) {
+      return date.toISOString();
+    }
+  };
+
   return {
     PropertiesService,
     DriveApp,
@@ -333,6 +450,7 @@ export function createGasEnvironment(initialProperties = {}) {
     ContentService,
     LockService,
     Logger,
+    Utilities,
     _internal: {
       properties,
       spreadsheets,

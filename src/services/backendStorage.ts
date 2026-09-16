@@ -23,6 +23,10 @@ import type {
   GetFormPayload,
   SaveFormPayload,
   BackendHealthData,
+  ArchiveFormFilesPayload,
+  ArchiveFormFilesResult,
+  GetArchivedFormFilePayload,
+  ArchivedFormFileResult,
 } from '../models/backend';
 
 export class BackendStorageService {
@@ -102,6 +106,20 @@ export class BackendStorageService {
    */
   async saveForm(payload: SaveFormPayload): Promise<FormRecord> {
     return backendClient.request<FormRecord, SaveFormPayload>('saveForm', payload);
+  }
+
+  /**
+   * 雲端歸檔表單產出之 Excel/XLSM 與 PDF 檔案（原子性一組操作）
+   */
+  async archiveFormFiles(payload: ArchiveFormFilesPayload): Promise<ArchiveFormFilesResult> {
+    return backendClient.request<ArchiveFormFilesResult, ArchiveFormFilesPayload>('archiveFormFiles', payload);
+  }
+
+  /**
+   * 依據表單編號與檔案類型安全取得已歸檔檔案之 Base64 資料
+   */
+  async getArchivedFormFile(query: GetArchivedFormFilePayload): Promise<ArchivedFormFileResult> {
+    return backendClient.request<ArchivedFormFileResult, GetArchivedFormFilePayload>('getArchivedFormFile', query);
   }
 }
 

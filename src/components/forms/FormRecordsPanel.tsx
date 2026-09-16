@@ -12,6 +12,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { backendStorageService } from '../../services/backendStorage';
 import { BackendApiError } from '../../services/backendClient';
 import type { FormRecord, FormType } from '../../models/backend';
+import { base64ToBlob, downloadBlob, printBlobPdf } from '../../utils/fileBlob';
 import {
   FileText,
   Search,
@@ -25,6 +26,8 @@ import {
   Stamp,
   Receipt,
   Building2,
+  FileSpreadsheet,
+  Printer,
 } from 'lucide-react';
 
 interface Props {
@@ -55,6 +58,7 @@ export const FormRecordsPanel: React.FC<Props> = ({
   const [forms, setForms] = useState<FormRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpeningId, setIsOpeningId] = useState<string | null>(null);
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
 
   // 篩選狀態
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -119,6 +123,52 @@ export const FormRecordsPanel: React.FC<Props> = ({
       }
     } finally {
       setIsOpeningId(null);
+    }
+  };
+
+  // 下載已歸檔之 Excel/XLSM 或 PDF 檔案
+  const handleDownloadArchivedFile = async (record: FormRecord, fileType: 'excel' | 'pdf') => {
+    const key = `${record.formId}_${fileType}`;
+    if (downloadingKey) return;
+    setDownloadingKey(key);
+    setApiError(null);
+
+    try {
+      const res = await backendStorageService.getArchivedFormFile({
+        formId: record.formId,
+        fileType,
+        year: selectedYear,
+      });
+      const blob = base64ToBlob(res.base64, res.mimeType);
+      downloadBlob(blob, res.fileName);
+    } catch (err: any) {
+      const msg = err instanceof BackendApiError ? err.safeMessage : (err.message || '下載歸檔檔案失敗');
+      setApiError(`下載檔案失敗：${msg}`);
+    } finally {
+      setDownloadingKey(null);
+    }
+  };
+
+  // 列印已歸檔之 PDF 檔案
+  const handlePrintArchivedPdf = async (record: FormRecord) => {
+    const key = `${record.formId}_print`;
+    if (downloadingKey) return;
+    setDownloadingKey(key);
+    setApiError(null);
+
+    try {
+      const res = await backendStorageService.getArchivedFormFile({
+        formId: record.formId,
+        fileType: 'pdf',
+        year: selectedYear,
+      });
+      const blob = base64ToBlob(res.base64, res.mimeType || 'application/pdf');
+      printBlobPdf(blob);
+    } catch (err: any) {
+      const msg = err instanceof BackendApiError ? err.safeMessage : (err.message || '列印失敗');
+      setApiError(`列印檔案失敗：${msg}`);
+    } finally {
+      setDownloadingKey(null);
     }
   };
 
@@ -325,24 +375,73 @@ export const FormRecordsPanel: React.FC<Props> = ({
                           {formatDateTime(record.updatedAt || record.createdAt)}
                         </td>
                         <td className="py-3 px-4 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenRecord(record)}
-                            disabled={Boolean(isOpeningId)}
-                            className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-md transition disabled:opacity-50"
-                          >
-                            {isOpening ? (
-                              <>
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenRecord(record)}
+                              disabled={Boolean(isOpeningId)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 border border-blue-200 rounded-md transition disabled:opacity-50"
+                              title="開啟編輯表單"
+                            >
+                              {isOpening ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                <span>載入中...</span>
-                              </>
-                            ) : (
-                              <>
+                              ) : (
                                 <FolderOpen className="w-3.5 h-3.5" />
-                                <span>開啟</span>
+                              )}
+                              <span>開啟</span>
+                            </button>
+
+                            {record.excelFileId ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadArchivedFile(record, 'excel')}
+                                disabled={Boolean(downloadingKey)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md transition disabled:opacity-50"
+                                title={`下載已歸檔 ${isSeal ? 'XLSM' : 'Excel'}`}
+                              >
+                                {downloadingKey === `${record.formId}_excel` ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                                )}
+                                <span>{isSeal ? 'XLSM' : 'Excel'}</span>
+                              </button>
+                            ) : null}
+
+                            {record.pdfFileId ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadArchivedFile(record, 'pdf')}
+                                  disabled={Boolean(downloadingKey)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 border border-red-200 rounded-md transition disabled:opacity-50"
+                                  title="下載已歸檔 PDF"
+                                >
+                                  {downloadingKey === `${record.formId}_pdf` ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <FileText className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>PDF</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintArchivedPdf(record)}
+                                  disabled={Boolean(downloadingKey)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 border border-slate-300 rounded-md transition disabled:opacity-50"
+                                  title="列印已歸檔 PDF"
+                                >
+                                  {downloadingKey === `${record.formId}_print` ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Printer className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>列印</span>
+                                </button>
                               </>
-                            )}
-                          </button>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -404,12 +503,12 @@ export const FormRecordsPanel: React.FC<Props> = ({
                       </div>
                     </div>
 
-                    <div className="pt-2">
+                    <div className="pt-2 flex flex-col gap-2">
                       <button
                         type="button"
                         onClick={() => handleOpenRecord(record)}
                         disabled={Boolean(isOpeningId)}
-                        className="w-full flex items-center justify-center gap-1.5 py-2.5 px-4 text-sm font-semibold text-blue-700 bg-blue-50/70 hover:bg-blue-100/70 border border-blue-200 rounded-xl transition min-h-[42px] disabled:opacity-50"
+                        className="w-full flex items-center justify-center gap-1.5 py-2 px-3 text-sm font-semibold text-blue-700 bg-blue-50/70 hover:bg-blue-100/70 border border-blue-200 rounded-xl transition min-h-[38px] disabled:opacity-50"
                       >
                         {isOpening ? (
                           <>
@@ -423,6 +522,60 @@ export const FormRecordsPanel: React.FC<Props> = ({
                           </>
                         )}
                       </button>
+
+                      {(record.excelFileId || record.pdfFileId) ? (
+                        <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                          {record.excelFileId ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadArchivedFile(record, 'excel')}
+                              disabled={Boolean(downloadingKey)}
+                              className="flex items-center justify-center gap-1 py-1.5 px-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg transition disabled:opacity-50"
+                            >
+                              {downloadingKey === `${record.formId}_excel` ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <FileSpreadsheet className="w-3.5 h-3.5" />
+                              )}
+                              <span>{isSeal ? 'XLSM' : 'Excel'}</span>
+                            </button>
+                          ) : (
+                            <div />
+                          )}
+
+                          {record.pdfFileId ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadArchivedFile(record, 'pdf')}
+                                disabled={Boolean(downloadingKey)}
+                                className="flex items-center justify-center gap-1 py-1.5 px-2 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg transition disabled:opacity-50"
+                              >
+                                {downloadingKey === `${record.formId}_pdf` ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <FileText className="w-3.5 h-3.5" />
+                                )}
+                                <span>PDF</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handlePrintArchivedPdf(record)}
+                                disabled={Boolean(downloadingKey)}
+                                className="flex items-center justify-center gap-1 py-1.5 px-2 text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-300 rounded-lg transition disabled:opacity-50"
+                              >
+                                {downloadingKey === `${record.formId}_print` ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Printer className="w-3.5 h-3.5" />
+                                )}
+                                <span>列印</span>
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 );
