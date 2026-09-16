@@ -10,7 +10,7 @@ interface Props {
 
 export const TabNav: React.FC<Props> = ({ activeTab, onChange }) => {
   return (
-    <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-2 sm:px-4 pt-2 sm:pt-3 overflow-x-auto flex-nowrap whitespace-nowrap scrollbar-none">
+    <div className="sticky top-16 z-20 flex border-b border-slate-200 bg-white rounded-t-2xl px-2 sm:px-4 pt-2 sm:pt-2.5 overflow-x-auto overflow-y-hidden sm:overflow-x-visible flex-nowrap whitespace-nowrap scrollbar-none">
       <button
         type="button"
         onClick={() => onChange('seal')}

@@ -24,12 +24,8 @@ import { backendStorageService } from './services/backendStorage';
 import { blobToBase64, downloadBlob } from './utils/fileBlob';
 import {
   Eye,
-  FileSpreadsheet,
-  FileText,
-  Download,
   Loader2,
   CheckCircle2,
-  CloudUpload,
   PlusCircle,
 } from 'lucide-react';
 
@@ -434,12 +430,16 @@ const MainApp: React.FC = () => {
     }
   };
 
+  // 保留底層函數供其他流程使用，避免 TS6133 警告
+  void handleSaveForm;
+  void handleDownloadBoth;
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-100">
       <Header />
 
-      <main className={`flex-1 max-w-5xl w-full mx-auto p-3 sm:p-6 ${activeTab === 'master' || activeTab === 'records' ? 'mb-8' : 'mb-36 sm:mb-24'}`}>
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <main className={`flex-1 max-w-5xl w-full mx-auto p-3 sm:p-6 ${activeTab === 'master' || activeTab === 'records' ? 'mb-8' : 'mb-24 sm:mb-20'}`}>
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200">
           {/* 表單／主檔頁籤切換 */}
           <TabNav activeTab={activeTab} onChange={(tab) => {
             setActiveTab(tab);
@@ -541,81 +541,30 @@ const MainApp: React.FC = () => {
               </button>
             </div>
 
-            {/* 操作按鈕群：Mobile 採分列結構，Desktop 單列 */}
-            <div className="w-full sm:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              {/* 官方核心主操作：完成並產生表單（一鍵完成：儲存+產檔+雲端歸檔+本機雙檔下載） */}
+            {/* 操作按鈕群：Desktop 單列，Mobile 並排兩顆按鈕 */}
+            <div className="w-full sm:w-auto grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-3">
+              {/* 主要操作：存檔（完整執行 handleCompleteAndGenerate 流程） */}
               <button
                 type="button"
                 onClick={handleCompleteAndGenerate}
                 disabled={isProcessing}
-                className="flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-xl text-sm font-bold transition shadow-md active:scale-95 disabled:opacity-50 min-h-[42px]"
+                className="flex items-center justify-center gap-1.5 px-5 py-2.5 sm:py-2 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-xl text-sm font-bold transition shadow-md active:scale-95 disabled:opacity-50 min-h-[42px]"
                 title="儲存最新表單、產生 Excel/XLSM 及 PDF、同步歸檔至 Google Drive 並於本機下載"
               >
                 <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                <span>完成並產生表單</span>
+                <span>存檔</span>
               </button>
 
-              {/* 次要操作（儲存、預覽） */}
-              <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSaveForm}
-                  disabled={isProcessing}
-                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-medium transition active:scale-95 disabled:opacity-50 min-h-[40px]"
-                >
-                  <CloudUpload className="w-4 h-4 text-blue-600" />
-                  <span>儲存表單</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handlePreview}
-                  disabled={isProcessing}
-                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-medium transition active:scale-95 disabled:opacity-50 min-h-[40px]"
-                >
-                  <Eye className="w-4 h-4 text-slate-600" />
-                  <span>預覽</span>
-                </button>
-              </div>
-
-              {/* 下載操作（Excel、PDF、兩者） */}
-              <div className="grid grid-cols-3 sm:flex sm:items-center gap-1.5 sm:gap-2">
-                <button
-                  type="button"
-                  onClick={handleDownloadExcel}
-                  disabled={isProcessing}
-                  className="flex items-center justify-center gap-1 px-2.5 sm:px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-medium transition shadow-sm active:scale-95 disabled:opacity-50 min-h-[40px]"
-                  title="下載 Excel"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  <span className="sm:inline hidden">下載 Excel</span>
-                  <span className="sm:hidden inline">Excel</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleDownloadPdf}
-                  disabled={isProcessing}
-                  className="flex items-center justify-center gap-1 px-2.5 sm:px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs sm:text-sm font-medium transition shadow-sm active:scale-95 disabled:opacity-50 min-h-[40px]"
-                  title="下載 PDF"
-                >
-                  <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  <span className="sm:inline hidden">下載 PDF</span>
-                  <span className="sm:hidden inline">PDF</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleDownloadBoth}
-                  disabled={isProcessing}
-                  className="flex items-center justify-center gap-1 px-2.5 sm:px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs sm:text-sm font-semibold transition shadow-md active:scale-95 disabled:opacity-50 min-h-[40px]"
-                  title="同時下載 Excel 與 PDF"
-                >
-                  <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  <span className="sm:inline hidden">Excel + PDF</span>
-                  <span className="sm:hidden inline">雙檔</span>
-                </button>
-              </div>
+              {/* 次要操作：預覽 */}
+              <button
+                type="button"
+                onClick={handlePreview}
+                disabled={isProcessing}
+                className="flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-medium transition active:scale-95 disabled:opacity-50 min-h-[42px]"
+              >
+                <Eye className="w-4 h-4 text-slate-600" />
+                <span>預覽</span>
+              </button>
             </div>
           </div>
         </footer>
