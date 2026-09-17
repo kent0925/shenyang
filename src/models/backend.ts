@@ -207,6 +207,7 @@ export interface SaveFormPayload {
   excelFileId?: string;
   pdfFileId?: string;
   version?: number;
+  expectedVersion?: number;
 }
 
 // ==========================================
@@ -222,6 +223,7 @@ export interface ArchiveFileSpec {
 export interface ArchiveFormFilesPayload {
   formId: string;
   year?: number;
+  expectedVersion: number;
   excel: ArchiveFileSpec;
   pdf: ArchiveFileSpec;
 }

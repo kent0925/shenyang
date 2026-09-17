@@ -69,13 +69,14 @@ const SAFE_ERROR_MESSAGES: Record<string, string> = {
   METHOD_NOT_ALLOWED: '僅支援 POST 請求方法。',
   INTERNAL_ERROR: '伺服器處理請求時發生錯誤，請稍後再試。',
   HTTP_ERROR: '伺服器連線回應異常，請稍後再試。',
+  VERSION_CONFLICT: '此表單已由其他使用者更新，為避免覆蓋最新資料，請重新載入後再編輯。',
 };
 
 /**
  * 根據後端錯誤碼與回應取得面向 UI 的安全中文訊息
  */
 function resolveSafeMessage(code: string, rawMessage?: string): string {
-  if (code === 'VALIDATION_ERROR' || code === 'NOT_FOUND') {
+  if (code === 'VALIDATION_ERROR' || code === 'NOT_FOUND' || code === 'VERSION_CONFLICT') {
     if (rawMessage && !rawMessage.includes('http') && !rawMessage.includes('secret') && !rawMessage.includes('token') && !rawMessage.includes('AppsScript')) {
       return rawMessage;
     }
