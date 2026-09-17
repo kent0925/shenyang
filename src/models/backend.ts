@@ -53,6 +53,15 @@ export interface ListSubProjectsPayload {
 // 2. 廠商主檔 (Vendors)
 // ==========================================
 
+export interface VendorBankAccount {
+  bankCode: string;
+  bankName: string;
+  branchCode: string;
+  branchName: string;
+  accountName: string;
+  accountNumber: string;
+}
+
 export interface Vendor {
   vendorId: string;
   vendorName: string;
@@ -64,6 +73,7 @@ export interface Vendor {
   branchName: string;
   accountName: string;
   accountNumber: string;
+  bankAccounts?: VendorBankAccount[];
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -80,6 +90,7 @@ export interface SaveVendorPayload {
   branchName?: string;
   accountName?: string;
   accountNumber?: string;
+  bankAccounts?: VendorBankAccount[];
   isActive?: boolean;
 }
 

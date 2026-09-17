@@ -2,6 +2,7 @@ import { SealApprovalData } from '../models/sealApproval';
 import { PaymentRequestData } from '../models/paymentRequest';
 import { backendStorageService } from './backendStorage';
 import { serializeSealApproval, serializePaymentRequest } from './formAdapters';
+import { syncVendorMasterAfterPaymentSave } from './vendorSync';
 
 export interface StorageService {
   saveSealApproval(data: SealApprovalData, formId?: string): Promise<{ success: boolean; id?: string }>;
@@ -22,6 +23,10 @@ export class BackendStorageAdapterService implements StorageService {
   async savePaymentRequest(data: PaymentRequestData, formId?: string): Promise<{ success: boolean; id?: string }> {
     const payload = serializePaymentRequest(data, formId);
     const record = await backendStorageService.saveForm(payload);
+    // 請款單成功儲存後，非同步建立或補充廠商主檔與匯款帳號（若失敗不影響請款單儲存結果）
+    syncVendorMasterAfterPaymentSave(data).catch((err) => {
+      console.warn('[VendorSync] 後續更新廠商主檔發生非預期錯誤:', err);
+    });
     return { success: true, id: record.formId };
   }
 }

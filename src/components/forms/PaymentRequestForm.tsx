@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { PaymentRequestData } from '../../models/paymentRequest';
 import { DEFAULT_COMPANIES } from '../../models/sealApproval';
-import type { Project, Vendor, BudgetItem, FormRecord, SubProject } from '../../models/backend';
+import type { Project, Vendor, BudgetItem, FormRecord, SubProject, VendorBankAccount } from '../../models/backend';
+import { getBankAccountKey } from '../../services/vendorSync';
 import { backendStorageService } from '../../services/backendStorage';
 import { calculateBudgetUsage, BudgetUsageSummary } from '../../services/budgetUsage';
 import {
@@ -62,6 +63,7 @@ export const PaymentRequestForm: React.FC<Props> = ({
 
   const lastQueriedTaxIdRef = useRef<string>('');
   const abortControllerRef = useRef<AbortController | null>(null);
+  const taxIdSourceRef = useRef<'vendorMaster' | 'manual'>('manual');
 
   // 初始化載入銀行清單與主檔 (專案、廠商)
   useEffect(() => {
@@ -246,6 +248,11 @@ export const PaymentRequestForm: React.FC<Props> = ({
 
   // 滿 8 碼且新制校驗通過後 500ms Debounce 自動查詢
   useEffect(() => {
+    // 若來源為廠商主檔帶入，不執行統編查詢
+    if (taxIdSourceRef.current === 'vendorMaster') {
+      return;
+    }
+
     const cleanId = (data.vendorTaxId || '').trim();
     if (cleanId.length === 8 && validateTaxId(cleanId)) {
       const timer = setTimeout(() => {
@@ -260,6 +267,7 @@ export const PaymentRequestForm: React.FC<Props> = ({
   }, [data.vendorTaxId]);
 
   const handleManualTaxIdLookup = () => {
+    taxIdSourceRef.current = 'manual';
     performTaxIdLookup(taxIdValue, true);
   };
 
@@ -294,28 +302,61 @@ export const PaymentRequestForm: React.FC<Props> = ({
 
   // 從廠商主檔快速帶入 (字串維持保留前導 0)
   const handleSelectVendorFromMaster = (selectedVendorId: string) => {
-    if (!selectedVendorId) return;
+    if (!selectedVendorId) {
+      onChange({
+        ...data,
+        vendorId: '',
+      });
+      return;
+    }
     const v = vendors.find((vend) => vend.vendorId === selectedVendorId);
     if (!v) return;
+
+    // 標記來源為 vendorMaster，避免觸發 taxId lookup
+    taxIdSourceRef.current = 'vendorMaster';
+    lastQueriedTaxIdRef.current = (v.taxId || '').trim();
+    if (companySearchMsg) setCompanySearchMsg(null);
+
+    // 取得預設帳號（若有 bankAccounts 優先取第一筆，否則取平鋪欄位）
+    let primaryAcc: Partial<VendorBankAccount> | undefined;
+    if (v.bankAccounts && v.bankAccounts.length > 0) {
+      primaryAcc = v.bankAccounts[0];
+    } else if (v.accountNumber || v.bankCode) {
+      primaryAcc = {
+        bankCode: v.bankCode || '',
+        bankName: v.bankName || '',
+        branchCode: v.branchCode || '',
+        branchName: v.branchName || '',
+        accountName: v.accountName || v.vendorName,
+        accountNumber: v.accountNumber || '',
+      };
+    }
+
+    const bCode = primaryAcc?.bankCode || v.bankCode || '';
+    const bName = primaryAcc?.bankName || v.bankName || '';
+    const brCode = primaryAcc?.branchCode || v.branchCode || '';
+    const brName = primaryAcc?.branchName || v.branchName || '';
+    const accNum = primaryAcc?.accountNumber || v.accountNumber || '';
+    const accName = primaryAcc?.accountName || v.accountName || v.vendorName;
 
     const updates: Partial<PaymentRequestData> = {
       vendorId: v.vendorId,
       vendor: v.vendorName,
       vendorTaxId: v.taxId || '',
-      bankCode: v.bankCode || '',
-      bankName: v.bankName || '',
-      branchCode: v.branchCode || '',
-      branchName: v.branchName || '',
-      accountNumber: v.accountNumber || '',
-      accountName: v.accountName || v.vendorName,
+      bankCode: bCode,
+      bankName: bName,
+      branchCode: brCode,
+      branchName: brName,
+      accountNumber: accNum,
+      accountName: accName,
       accountNameSameAsVendor: true,
       bankAccount: {
         type: 'code',
-        bankCode: v.bankCode || '',
-        bankName: v.bankName || '',
-        branch: v.branchName || v.branchCode || '',
-        accountNumber: v.accountNumber || '',
-        accountName: v.accountName || v.vendorName,
+        bankCode: bCode,
+        bankName: bName,
+        branch: brName || brCode,
+        accountNumber: accNum,
+        accountName: accName,
       },
     };
 
@@ -330,6 +371,77 @@ export const PaymentRequestForm: React.FC<Props> = ({
     onChange({
       ...data,
       ...updates,
+    });
+  };
+
+  // 當前選中之廠商主檔物件與其銀行帳號清單
+  const selectedVendor = useMemo(() => {
+    return vendors.find((v) => v.vendorId === data.vendorId);
+  }, [vendors, data.vendorId]);
+
+  const vendorBankAccounts: VendorBankAccount[] = useMemo(() => {
+    if (!selectedVendor) return [];
+    if (selectedVendor.bankAccounts && selectedVendor.bankAccounts.length > 0) {
+      return selectedVendor.bankAccounts;
+    }
+    if (selectedVendor.accountNumber || selectedVendor.bankCode) {
+      return [{
+        bankCode: selectedVendor.bankCode || '',
+        bankName: selectedVendor.bankName || '',
+        branchCode: selectedVendor.branchCode || '',
+        branchName: selectedVendor.branchName || '',
+        accountName: selectedVendor.accountName || selectedVendor.vendorName,
+        accountNumber: selectedVendor.accountNumber || '',
+      }];
+    }
+    return [];
+  }, [selectedVendor]);
+
+  // 切換已儲存之匯款帳號
+  const handleSelectStoredAccount = (acc: VendorBankAccount) => {
+    const bCode = acc.bankCode || '';
+    const bName = acc.bankName || '';
+    const brCode = acc.branchCode || '';
+    const brName = acc.branchName || '';
+    const accNum = acc.accountNumber || '';
+    const accName = acc.accountName || data.vendor;
+
+    onChange({
+      ...data,
+      bankCode: bCode,
+      bankName: bName,
+      branchCode: brCode,
+      branchName: brName,
+      accountNumber: accNum,
+      accountName: accName,
+      bankAccount: {
+        type: 'code',
+        bankCode: bCode,
+        bankName: bName,
+        branch: brName || brCode,
+        accountNumber: accNum,
+        accountName: accName,
+      },
+    });
+  };
+
+  // 選擇「＋ 新增匯款帳號」模式
+  const handleSelectNewAccountMode = () => {
+    onChange({
+      ...data,
+      bankCode: '',
+      bankName: '',
+      branchCode: '',
+      branchName: '',
+      accountNumber: '',
+      bankAccount: {
+        type: 'code',
+        bankCode: '',
+        bankName: '',
+        branch: '',
+        accountNumber: '',
+        accountName: data.accountName || data.vendor,
+      },
     });
   };
 
@@ -532,16 +644,28 @@ export const PaymentRequestForm: React.FC<Props> = ({
     }
   };
 
-  // 遠期支票勾選狀態切換（若取消勾選則一併清空日期）
-  const handlePostDatedCheckChange = (checked: boolean) => {
-    onChange({
-      ...data,
-      specialRequirements: {
-        ...data.specialRequirements,
-        postDatedCheck: checked,
-        postDatedDate: checked ? data.specialRequirements.postDatedDate : '',
-      },
-    });
+  // 支票種類二選一切換（cashiersCheck 與 postDatedCheck 互斥）
+  const handleSelectCheckType = (type: 'cashiersCheck' | 'postDatedCheck') => {
+    if (type === 'cashiersCheck') {
+      onChange({
+        ...data,
+        specialRequirements: {
+          ...data.specialRequirements,
+          cashiersCheck: true,
+          postDatedCheck: false,
+          postDatedDate: '',
+        },
+      });
+    } else if (type === 'postDatedCheck') {
+      onChange({
+        ...data,
+        specialRequirements: {
+          ...data.specialRequirements,
+          postDatedCheck: true,
+          cashiersCheck: false,
+        },
+      });
+    }
   };
 
   const payable = calculatePayableAmount(
@@ -1055,8 +1179,14 @@ export const PaymentRequestForm: React.FC<Props> = ({
                   placeholder="8 碼數字"
                   value={data.vendorTaxId || ''}
                   onChange={(e) => {
+                    taxIdSourceRef.current = 'manual';
                     const val = e.target.value.replace(/\D/g, '').slice(0, 8);
-                    onChange({ ...data, vendorTaxId: val });
+                    const shouldClearVendorId = !!data.vendorId;
+                    onChange({
+                      ...data,
+                      vendorTaxId: val,
+                      vendorId: shouldClearVendorId ? '' : data.vendorId,
+                    });
                     if (companySearchMsg) setCompanySearchMsg(null);
                   }}
                   onKeyDown={(e) => {
@@ -1138,6 +1268,88 @@ export const PaymentRequestForm: React.FC<Props> = ({
             </div>
             <span className="text-[11px] text-slate-400">依官方金融機構代碼與分支機構資料庫雙向連動</span>
           </div>
+
+          {/* 若廠商主檔有已儲存帳號，提供快速切換與新增選項 */}
+          {data.vendorId && vendorBankAccounts.length > 0 && (() => {
+            const currentAccKey = getBankAccountKey({
+              bankCode: data.bankCode,
+              bankName: data.bankName,
+              branchCode: data.branchCode,
+              branchName: data.branchName || data.bankAccount?.branch,
+              accountNumber: data.accountNumber || data.bankAccount?.accountNumber,
+            });
+            const matchingIndex = vendorBankAccounts.findIndex(
+              (acc) => getBankAccountKey(acc) === currentAccKey
+            );
+            const isNewAccountMode = matchingIndex === -1;
+
+            return (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                <div className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                  <span>選擇廠商已登記之匯款帳號（共 {vendorBankAccounts.length} 組）：</span>
+                  {isNewAccountMode && (
+                    <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-medium border border-amber-200">
+                      填寫新帳號模式（儲存後自動新增至主檔）
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  {vendorBankAccounts.map((acc, idx) => {
+                    const accKey = getBankAccountKey(acc);
+                    const isSelected = matchingIndex === idx;
+                    const bankDisplay = `${acc.bankName || ''}${acc.bankCode ? ` (${acc.bankCode})` : ''}`;
+                    const branchDisplay = `${acc.branchName || ''}${acc.branchCode ? ` (${acc.branchCode})` : ''}`;
+                    return (
+                      <label
+                        key={accKey || idx}
+                        className={`flex items-start gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                          isSelected
+                            ? 'bg-blue-50 border-blue-300 text-blue-900 font-medium'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="vendorStoredAccount"
+                          checked={isSelected}
+                          onChange={() => handleSelectStoredAccount(acc)}
+                          className="mt-0.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">{bankDisplay || '未指定銀行'}</span>
+                            {branchDisplay && <span className="text-slate-500">／ {branchDisplay}</span>}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            帳號：<span className="font-mono text-slate-800 font-semibold">{acc.accountNumber || '無帳號'}</span>
+                            {acc.accountName && <span className="ml-3">戶名：{acc.accountName}</span>}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+
+                  {/* ＋ 新增匯款帳號 Radio */}
+                  <label
+                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                      isNewAccountMode
+                        ? 'bg-amber-50 border-amber-300 text-amber-900 font-medium'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="vendorStoredAccount"
+                      checked={isNewAccountMode}
+                      onChange={handleSelectNewAccountMode}
+                      className="text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    <span>＋ 新增匯款帳號（於下方輸入明細，存檔後自動累積至此廠商）</span>
+                  </label>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* 第一列：金融機構代碼與名稱 */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
@@ -1425,67 +1637,82 @@ export const PaymentRequestForm: React.FC<Props> = ({
                 className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
               />
               <span className="text-sm font-bold text-slate-800">開立支票</span>
-              <span className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-medium">
-                可複選
-              </span>
             </label>
 
             {activeGroup === 'check' && (
-              <div className="mt-3 pt-3 border-t border-slate-100 space-y-2.5 pl-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-sm">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={data.specialRequirements.cashiersCheck}
-                      onChange={(e) => updateSpecial({ cashiersCheck: e.target.checked })}
-                      className="rounded text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>請開立本票／台銀支票</span>
-                  </label>
+              <div className="mt-3 pt-3 border-t border-slate-100 space-y-4 pl-6">
+                {/* 支票種類（二選一） */}
+                <div>
+                  <div className="text-xs font-semibold text-slate-700 mb-2">
+                    支票種類（二選一）
+                  </div>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer text-sm">
+                      <input
+                        type="radio"
+                        name="checkType"
+                        value="cashiersCheck"
+                        checked={Boolean(data.specialRequirements.cashiersCheck)}
+                        onChange={() => handleSelectCheckType('cashiersCheck')}
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                      />
+                      <span>請開立本票／台銀支票</span>
+                    </label>
 
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={data.specialRequirements.postDatedCheck}
-                      onChange={(e) => handlePostDatedCheckChange(e.target.checked)}
-                      className="rounded text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>請付遠期支票予受款者</span>
-                  </label>
+                    <label className="flex items-center gap-2 cursor-pointer text-sm">
+                      <input
+                        type="radio"
+                        name="checkType"
+                        value="postDatedCheck"
+                        checked={Boolean(data.specialRequirements.postDatedCheck)}
+                        onChange={() => handleSelectCheckType('postDatedCheck')}
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                      />
+                      <span>請付遠期支票予受款者</span>
+                    </label>
 
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={data.specialRequirements.noCross}
-                      onChange={(e) => updateSpecial({ noCross: e.target.checked })}
-                      className="rounded text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>請勿劃線</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={data.specialRequirements.noEndorse}
-                      onChange={(e) => updateSpecial({ noEndorse: e.target.checked })}
-                      className="rounded text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>請勿禁止背書轉讓</span>
-                  </label>
+                    {/* 遠期支票指定兌現日期 */}
+                    {data.specialRequirements.postDatedCheck && (
+                      <div className="pl-6 pt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-700">
+                        <span className="font-semibold">指定兌現日期：</span>
+                        <input
+                          type="date"
+                          value={data.specialRequirements.postDatedDate}
+                          onChange={(e) => updateSpecial({ postDatedDate: e.target.value })}
+                          className="px-2.5 py-1 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500 bg-white"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                {/* 遠期支票指定兌現日期 */}
-                {data.specialRequirements.postDatedCheck && (
-                  <div className="pt-2 flex flex-wrap items-center gap-2 text-xs text-slate-700">
-                    <span className="font-semibold">指定兌現日期：</span>
-                    <input
-                      type="date"
-                      value={data.specialRequirements.postDatedDate}
-                      onChange={(e) => updateSpecial({ postDatedDate: e.target.value })}
-                      className="px-2.5 py-1 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500 bg-white"
-                    />
+                {/* 附加條件（可複選） */}
+                <div className="pt-3 border-t border-slate-100">
+                  <div className="text-xs font-semibold text-slate-700 mb-2">
+                    附加條件（可複選）
                   </div>
-                )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-sm">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={data.specialRequirements.noCross}
+                        onChange={(e) => updateSpecial({ noCross: e.target.checked })}
+                        className="rounded text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>請勿劃線</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={data.specialRequirements.noEndorse}
+                        onChange={(e) => updateSpecial({ noEndorse: e.target.checked })}
+                        className="rounded text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>請勿禁止背書轉讓</span>
+                    </label>
+                  </div>
+                </div>
               </div>
             )}
           </div>

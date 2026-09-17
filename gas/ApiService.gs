@@ -248,6 +248,29 @@ function handleListVendors(payload) {
   for (var i = 0; i < rows.length; i++) {
     var ven = rowToObject(SHEETS.VENDORS, rows[i]);
     if (ven.vendorId) {
+      // 解析或組裝 bankAccounts 多帳號清單（確保向下相容）
+      var accounts = [];
+      if (ven.bankAccounts) {
+        try {
+          var parsed = typeof ven.bankAccounts === 'string' ? JSON.parse(ven.bankAccounts) : ven.bankAccounts;
+          if (Array.isArray(parsed)) {
+            accounts = parsed;
+          }
+        } catch (e) {
+          // 忽略解析錯誤
+        }
+      }
+      if (accounts.length === 0 && (ven.accountNumber || ven.bankCode)) {
+        accounts.push({
+          bankCode: ven.bankCode || '',
+          bankName: ven.bankName || '',
+          branchCode: ven.branchCode || '',
+          branchName: ven.branchName || '',
+          accountName: ven.accountName || '',
+          accountNumber: ven.accountNumber || '',
+        });
+      }
+      ven.bankAccounts = accounts;
       vendors.push(ven);
     }
   }
@@ -271,6 +294,30 @@ function handleSaveVendor(payload) {
   var cleanBranchCode = payload.branchCode !== undefined && payload.branchCode !== null ? String(payload.branchCode) : '';
   var cleanAccountNumber = payload.accountNumber !== undefined && payload.accountNumber !== null ? String(payload.accountNumber) : '';
 
+  // 處理 bankAccounts 多帳號陣列
+  var bankAccounts = [];
+  if (payload.bankAccounts && Array.isArray(payload.bankAccounts)) {
+    bankAccounts = payload.bankAccounts;
+  } else if (cleanAccountNumber || cleanBankCode) {
+    bankAccounts = [{
+      bankCode: cleanBankCode,
+      bankName: payload.bankName ? String(payload.bankName).trim() : '',
+      branchCode: cleanBranchCode,
+      branchName: payload.branchName ? String(payload.branchName).trim() : '',
+      accountName: payload.accountName ? String(payload.accountName).trim() : '',
+      accountNumber: cleanAccountNumber,
+    }];
+  }
+
+  // 首筆帳號同步回填至平鋪欄位（保持平鋪欄位向後相容）
+  var primaryAcc = bankAccounts.length > 0 ? bankAccounts[0] : null;
+  var finalBankCode = primaryAcc ? (primaryAcc.bankCode || '') : cleanBankCode;
+  var finalBankName = primaryAcc ? (primaryAcc.bankName || '') : (payload.bankName ? String(payload.bankName).trim() : '');
+  var finalBranchCode = primaryAcc ? (primaryAcc.branchCode || '') : cleanBranchCode;
+  var finalBranchName = primaryAcc ? (primaryAcc.branchName || '') : (payload.branchName ? String(payload.branchName).trim() : '');
+  var finalAccountName = primaryAcc ? (primaryAcc.accountName || '') : (payload.accountName ? String(payload.accountName).trim() : '');
+  var finalAccountNumber = primaryAcc ? (primaryAcc.accountNumber || '') : cleanAccountNumber;
+
   if (vendorId) {
     // 更新廠商
     var rowIndex = findRowIndexById(sheet, vendorId);
@@ -282,25 +329,40 @@ function handleSaveVendor(payload) {
     var existingRow = sheet.getRange(rowIndex, 1, 1, numCols).getValues()[0];
     var existingObj = rowToObject(SHEETS.VENDORS, existingRow);
 
+    // 若未傳入新 bankAccounts，沿用原有或以平鋪欄位 fallback
+    if (!payload.bankAccounts && existingObj.bankAccounts) {
+      try {
+        var parsedOld = typeof existingObj.bankAccounts === 'string' ? JSON.parse(existingObj.bankAccounts) : existingObj.bankAccounts;
+        if (Array.isArray(parsedOld) && parsedOld.length > 0) {
+          bankAccounts = parsedOld;
+        }
+      } catch (e) {}
+    }
+
     var updatedObj = {
       vendorId: existingObj.vendorId,
       vendorName: payload.vendorName || existingObj.vendorName,
       taxId: cleanTaxId || existingObj.taxId,
       entityType: payload.entityType || existingObj.entityType || '公司',
-      bankCode: cleanBankCode || existingObj.bankCode,
-      bankName: payload.bankName || existingObj.bankName,
-      branchCode: cleanBranchCode || existingObj.branchCode,
-      branchName: payload.branchName || existingObj.branchName,
-      accountName: payload.accountName || existingObj.accountName,
-      accountNumber: cleanAccountNumber || existingObj.accountNumber,
+      bankCode: finalBankCode || existingObj.bankCode,
+      bankName: finalBankName || existingObj.bankName,
+      branchCode: finalBranchCode || existingObj.branchCode,
+      branchName: finalBranchName || existingObj.branchName,
+      accountName: finalAccountName || existingObj.accountName,
+      accountNumber: finalAccountNumber || existingObj.accountNumber,
       isActive: payload.isActive !== undefined ? payload.isActive : existingObj.isActive,
       createdAt: existingObj.createdAt,
       updatedAt: getCurrentTimestamp(),
+      bankAccounts: JSON.stringify(bankAccounts),
     };
 
     var updatedRow = objectToRow(SHEETS.VENDORS, updatedObj);
     sheet.getRange(rowIndex, 1, 1, updatedRow.length).setValues([updatedRow]);
-    return updatedObj;
+    
+    // 回傳物件中將 bankAccounts 轉回陣列
+    var returnObj = Object.assign({}, updatedObj);
+    returnObj.bankAccounts = bankAccounts;
+    return returnObj;
   } else {
     // 新增廠商
     var newVendorId = getNextId(ID_TYPES.VENDOR);
@@ -309,20 +371,24 @@ function handleSaveVendor(payload) {
       vendorName: String(payload.vendorName).trim(),
       taxId: cleanTaxId,
       entityType: payload.entityType ? String(payload.entityType).trim() : '公司',
-      bankCode: cleanBankCode,
-      bankName: payload.bankName ? String(payload.bankName).trim() : '',
-      branchCode: cleanBranchCode,
-      branchName: payload.branchName ? String(payload.branchName).trim() : '',
-      accountName: payload.accountName ? String(payload.accountName).trim() : '',
-      accountNumber: cleanAccountNumber,
+      bankCode: finalBankCode,
+      bankName: finalBankName,
+      branchCode: finalBranchCode,
+      branchName: finalBranchName,
+      accountName: finalAccountName,
+      accountNumber: finalAccountNumber,
       isActive: payload.isActive !== undefined ? Boolean(payload.isActive) : true,
       createdAt: getCurrentTimestamp(),
       updatedAt: getCurrentTimestamp(),
+      bankAccounts: JSON.stringify(bankAccounts),
     };
 
     var newRow = objectToRow(SHEETS.VENDORS, newVendorObj);
     sheet.appendRow(newRow);
-    return newVendorObj;
+
+    var returnNewObj = Object.assign({}, newVendorObj);
+    returnNewObj.bankAccounts = bankAccounts;
+    return returnNewObj;
   }
 }
 

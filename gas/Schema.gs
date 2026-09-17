@@ -91,6 +91,7 @@ var SCHEMAS = {
       { key: 'isActive', label: '啟用狀態', type: 'boolean' },
       { key: 'createdAt', label: '建立時間', type: 'datetime' },
       { key: 'updatedAt', label: '更新時間', type: 'datetime' },
+      { key: 'bankAccounts', label: '匯款帳號清單', type: 'json' },
     ],
   },
 
