@@ -484,6 +484,66 @@ export const PaymentRequestForm: React.FC<Props> = ({
     });
   };
 
+  // 依據目前 specialRequirements 狀態推導大區塊
+  const currentGroup: 'check' | 'other' | null = React.useMemo(() => {
+    const hasCheck = Boolean(
+      data.specialRequirements.cashiersCheck ||
+      data.specialRequirements.postDatedCheck ||
+      data.specialRequirements.noCross ||
+      data.specialRequirements.noEndorse
+    );
+    const hasOther = Boolean(
+      data.specialRequirements.wireTransfer ||
+      data.specialRequirements.offsetBorrowing
+    );
+    if (hasCheck && !hasOther) return 'check';
+    if (hasOther && !hasCheck) return 'other';
+    return null;
+  }, [data.specialRequirements]);
+
+  // 記錄使用者主動點選的群組（支援尚未勾選子項目時之展開狀態）
+  const [localGroup, setLocalGroup] = useState<'check' | 'other' | null>(null);
+  const activeGroup = currentGroup || localGroup;
+
+  // 使用者切換大區塊時執行互斥清理
+  const handleSelectGroup = (group: 'check' | 'other') => {
+    setLocalGroup(group);
+    if (group === 'check') {
+      onChange({
+        ...data,
+        specialRequirements: {
+          ...data.specialRequirements,
+          wireTransfer: false,
+          offsetBorrowing: false,
+        },
+      });
+    } else if (group === 'other') {
+      onChange({
+        ...data,
+        specialRequirements: {
+          ...data.specialRequirements,
+          cashiersCheck: false,
+          postDatedCheck: false,
+          noCross: false,
+          noEndorse: false,
+          postDatedDate: '',
+        },
+      });
+    }
+  };
+
+  // 遠期支票勾選狀態切換（若取消勾選則一併清空日期）
+  const handlePostDatedCheckChange = (checked: boolean) => {
+    onChange({
+      ...data,
+      specialRequirements: {
+        ...data.specialRequirements,
+        postDatedCheck: checked,
+        postDatedDate: checked ? data.specialRequirements.postDatedDate : '',
+      },
+    });
+  };
+
   const payable = calculatePayableAmount(
     data.currentAmount,
     data.retentionAmount,
@@ -1342,80 +1402,140 @@ export const PaymentRequestForm: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* 區塊四：特殊要求 */}
+      {/* 區塊四：付款方式 */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-        <h3 className="text-sm font-bold text-slate-800 mb-3">特殊要求（表單控制項勾選）</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={data.specialRequirements.noCross}
-              onChange={(e) => updateSpecial({ noCross: e.target.checked })}
-              className="rounded text-blue-600 focus:ring-blue-500"
-            />
-            <span>請勿劃線</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={data.specialRequirements.noEndorse}
-              onChange={(e) => updateSpecial({ noEndorse: e.target.checked })}
-              className="rounded text-blue-600 focus:ring-blue-500"
-            />
-            <span>請勿禁止背書轉讓</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={data.specialRequirements.cashiersCheck}
-              onChange={(e) => updateSpecial({ cashiersCheck: e.target.checked })}
-              className="rounded text-blue-600 focus:ring-blue-500"
-            />
-            <span>請開立本票/台銀支票</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={data.specialRequirements.wireTransfer}
-              onChange={(e) => updateSpecial({ wireTransfer: e.target.checked })}
-              className="rounded text-blue-600 focus:ring-blue-500"
-            />
-            <span>請以匯款支付</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={data.specialRequirements.offsetBorrowing}
-              onChange={(e) => updateSpecial({ offsetBorrowing: e.target.checked })}
-              className="rounded text-blue-600 focus:ring-blue-500"
-            />
-            <span>請沖銷借支款</span>
-          </label>
-        </div>
+        <h3 className="text-sm font-bold text-slate-800 mb-3">付款方式</h3>
 
-        {/* 遠期支票附屬設定 */}
-        <div className="mt-3 pt-3 border-t border-slate-200">
-          <label className="flex items-center gap-2 cursor-pointer text-sm mb-2">
-            <input
-              type="checkbox"
-              checked={data.specialRequirements.postDatedCheck}
-              onChange={(e) => updateSpecial({ postDatedCheck: e.target.checked })}
-              className="rounded text-blue-600 focus:ring-blue-500"
-            />
-            <span>請付遠期支票予受款者</span>
-          </label>
-
-          {data.specialRequirements.postDatedCheck && (
-            <div className="pl-6 flex items-center gap-2 text-xs text-slate-700">
-              <span>指定兌現日期（Date Picker）：</span>
+        <div className="space-y-3">
+          {/* 大區塊 A：開立支票 */}
+          <div
+            className={`border rounded-lg transition-colors p-3.5 ${
+              activeGroup === 'check'
+                ? 'bg-white border-blue-300 shadow-sm ring-1 ring-blue-500/20'
+                : 'bg-slate-100/60 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
               <input
-                type="date"
-                value={data.specialRequirements.postDatedDate}
-                onChange={(e) => updateSpecial({ postDatedDate: e.target.value })}
-                className="px-2.5 py-1 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500 bg-white"
+                type="radio"
+                name="paymentGroup"
+                value="check"
+                checked={activeGroup === 'check'}
+                onChange={() => handleSelectGroup('check')}
+                className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
               />
-            </div>
-          )}
+              <span className="text-sm font-bold text-slate-800">開立支票</span>
+              <span className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-medium">
+                可複選
+              </span>
+            </label>
+
+            {activeGroup === 'check' && (
+              <div className="mt-3 pt-3 border-t border-slate-100 space-y-2.5 pl-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-sm">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={data.specialRequirements.cashiersCheck}
+                      onChange={(e) => updateSpecial({ cashiersCheck: e.target.checked })}
+                      className="rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>請開立本票／台銀支票</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={data.specialRequirements.postDatedCheck}
+                      onChange={(e) => handlePostDatedCheckChange(e.target.checked)}
+                      className="rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>請付遠期支票予受款者</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={data.specialRequirements.noCross}
+                      onChange={(e) => updateSpecial({ noCross: e.target.checked })}
+                      className="rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>請勿劃線</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={data.specialRequirements.noEndorse}
+                      onChange={(e) => updateSpecial({ noEndorse: e.target.checked })}
+                      className="rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>請勿禁止背書轉讓</span>
+                  </label>
+                </div>
+
+                {/* 遠期支票指定兌現日期 */}
+                {data.specialRequirements.postDatedCheck && (
+                  <div className="pt-2 flex flex-wrap items-center gap-2 text-xs text-slate-700">
+                    <span className="font-semibold">指定兌現日期：</span>
+                    <input
+                      type="date"
+                      value={data.specialRequirements.postDatedDate}
+                      onChange={(e) => updateSpecial({ postDatedDate: e.target.value })}
+                      className="px-2.5 py-1 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 大區塊 B：其他付款方式 */}
+          <div
+            className={`border rounded-lg transition-colors p-3.5 ${
+              activeGroup === 'other'
+                ? 'bg-white border-blue-300 shadow-sm ring-1 ring-blue-500/20'
+                : 'bg-slate-100/60 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="radio"
+                name="paymentGroup"
+                value="other"
+                checked={activeGroup === 'other'}
+                onChange={() => handleSelectGroup('other')}
+                className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+              />
+              <span className="text-sm font-bold text-slate-800">其他付款方式</span>
+            </label>
+
+            {activeGroup === 'other' && (
+              <div className="mt-3 pt-3 border-t border-slate-100 pl-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-sm">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={data.specialRequirements.wireTransfer}
+                      onChange={(e) => updateSpecial({ wireTransfer: e.target.checked })}
+                      className="rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>請以匯款支付</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={data.specialRequirements.offsetBorrowing}
+                      onChange={(e) => updateSpecial({ offsetBorrowing: e.target.checked })}
+                      className="rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>請沖銷借支款</span>
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
