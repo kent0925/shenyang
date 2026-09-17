@@ -34,6 +34,7 @@ interface PendingArchiveInfo {
   formId: string;
   formType: 'seal' | 'payment';
   snapshotJson: string;
+  version: number;
 }
 
 const MainApp: React.FC = () => {
@@ -41,9 +42,11 @@ const MainApp: React.FC = () => {
   const [sealData, setSealData] = useState<SealApprovalData>(INITIAL_SEAL_APPROVAL_DATA);
   const [paymentData, setPaymentData] = useState<PaymentRequestData>(INITIAL_PAYMENT_REQUEST_DATA);
 
-  // 表單後端持久化 ID 追蹤（若有值表示為更新既有表單，若為 null 表示為建立新表單）
+  // 表單後端持久化 ID 與 Version 追蹤（若有值表示為更新既有表單，若為 null 表示為建立新表單）
   const [currentSealFormId, setCurrentSealFormId] = useState<string | null>(null);
+  const [currentSealVersion, setCurrentSealVersion] = useState<number | null>(null);
   const [currentPaymentFormId, setCurrentPaymentFormId] = useState<string | null>(null);
+  const [currentPaymentVersion, setCurrentPaymentVersion] = useState<number | null>(null);
   const [pendingArchive, setPendingArchive] = useState<PendingArchiveInfo | null>(null);
   const [isPaymentOverBudget, setIsPaymentOverBudget] = useState(false);
 
@@ -232,15 +235,17 @@ const MainApp: React.FC = () => {
     const currentFormType = activeTab as 'seal' | 'payment';
     const currentDataJson = JSON.stringify(currentFormType === 'seal' ? sealData : paymentData);
 
-    // 檢查是否有同表單類型且內容完全未修改之 pending archive
+    // 檢查是否有同表單類型且內容完全未修改之 pending archive（必須綁定同版本）
     const canReusePending = Boolean(
       pendingArchive &&
       pendingArchive.formType === currentFormType &&
       pendingArchive.snapshotJson === currentDataJson &&
-      pendingArchive.formId
+      pendingArchive.formId &&
+      typeof pendingArchive.version === 'number'
     );
 
     let targetFormId = canReusePending && pendingArchive ? pendingArchive.formId : '';
+    let targetVersion = canReusePending && pendingArchive ? pendingArchive.version : 1;
 
     try {
       // 1. 若非有效的 pending 重試狀態，先執行表單儲存
@@ -248,26 +253,37 @@ const MainApp: React.FC = () => {
         setStatusMessage('正在儲存最新表單資料...');
         try {
           if (currentFormType === 'seal') {
-            const res = await storageService.saveSealApproval(sealData, currentSealFormId || undefined);
+            const expVer = currentSealFormId && currentSealVersion ? currentSealVersion : undefined;
+            const res = await storageService.saveSealApproval(sealData, currentSealFormId || undefined, expVer);
             if (!res.id) throw new Error('儲存用印／簽呈後未取得有效表單編號');
             targetFormId = res.id;
+            targetVersion = typeof res.version === 'number' ? res.version : (currentSealVersion || 1) + 1;
             setCurrentSealFormId(res.id);
+            setCurrentSealVersion(targetVersion);
           } else {
-            const res = await storageService.savePaymentRequest(paymentData, currentPaymentFormId || undefined);
+            const expVer = currentPaymentFormId && currentPaymentVersion ? currentPaymentVersion : undefined;
+            const res = await storageService.savePaymentRequest(paymentData, currentPaymentFormId || undefined, expVer);
             if (!res.id) throw new Error('儲存請款單後未取得有效表單編號');
             targetFormId = res.id;
+            targetVersion = typeof res.version === 'number' ? res.version : (currentPaymentVersion || 1) + 1;
             setCurrentPaymentFormId(res.id);
+            setCurrentPaymentVersion(targetVersion);
           }
-          // 儲存成功，記錄 pendingArchive 狀態
+          // 儲存成功，記錄 pendingArchive 狀態（綁定已儲存成功的權威版本）
           setPendingArchive({
             formId: targetFormId,
             formType: currentFormType,
             snapshotJson: currentDataJson,
+            version: targetVersion,
           });
         } catch (saveErr: any) {
-          // 初始儲存失敗：絕不宣稱表單已妥善儲存！絕不設定 pending archive！
+          // 初始儲存失敗：絕不宣稱表單已妥善儲存！清除 pending archive！
           setPendingArchive(null);
-          alert(`「完成並產生表單」儲存失敗：${saveErr.message || saveErr}`);
+          if (saveErr?.code === 'VERSION_CONFLICT' || saveErr?.message?.includes('其他使用者更新')) {
+            alert('此表單已由其他使用者更新，為避免覆蓋最新資料，請重新載入最新版本後再編輯。');
+          } else {
+            alert(`「完成並產生表單」儲存失敗：${saveErr.message || saveErr}`);
+          }
           setStatusMessage(null);
           return;
         }
@@ -324,9 +340,10 @@ const MainApp: React.FC = () => {
         blobToBase64(pdfBlob),
       ]);
 
-      // 5. 呼叫後端歸檔 API（單一請求原子操作）
+      // 5. 呼叫後端歸檔 API（單一請求原子操作，帶入 expectedVersion 防護）
       await backendStorageService.archiveFormFiles({
         formId: targetFormId,
+        expectedVersion: targetVersion,
         excel: {
           fileName: excelFileName,
           mimeType: excelMimeType,
@@ -350,8 +367,13 @@ const MainApp: React.FC = () => {
       setStatusMessage('表單已完成：Excel / PDF 已下載並同步歸檔至雲端');
       setTimeout(() => setStatusMessage(null), 5000);
     } catch (archiveErr: any) {
-      // 歸檔階段失敗：因 Form Save 已成功，保留 pending 狀態供重試，顯示可重試之明確提示
-      alert(`「完成並產生表單」雲端歸檔失敗：${archiveErr.message || archiveErr}\n\n表單資料已儲存，可再次點擊「完成並產生表單」重試歸檔。`);
+      if (archiveErr?.code === 'VERSION_CONFLICT' || archiveErr?.message?.includes('其他使用者更新')) {
+        setPendingArchive(null);
+        alert('此表單已由其他使用者更新，為避免覆蓋最新資料，請重新載入最新版本後再編輯。');
+      } else {
+        // 歸檔階段非衝突失敗：因 Form Save 已成功，保留 pending 狀態供重試
+        alert(`「完成並產生表單」雲端歸檔失敗：${archiveErr.message || archiveErr}\n\n表單資料已儲存，可再次點擊「完成並產生表單」重試歸檔。`);
+      }
       setStatusMessage(null);
     } finally {
       setIsProcessing(false);
@@ -366,31 +388,43 @@ const MainApp: React.FC = () => {
 
     try {
       if (activeTab === 'seal') {
-        const res = await storageService.saveSealApproval(sealData, currentSealFormId || undefined);
+        const expVer = currentSealFormId && currentSealVersion ? currentSealVersion : undefined;
+        const res = await storageService.saveSealApproval(sealData, currentSealFormId || undefined, expVer);
         if (res.id) {
+          const newVer = typeof res.version === 'number' ? res.version : (currentSealVersion || 1) + 1;
           setCurrentSealFormId(res.id);
+          setCurrentSealVersion(newVer);
           setPendingArchive({
             formId: res.id,
             formType: 'seal',
             snapshotJson: JSON.stringify(sealData),
+            version: newVer,
           });
         }
         setStatusMessage(currentSealFormId ? '用印／簽呈已成功更新！' : '用印／簽呈已成功儲存！');
       } else if (activeTab === 'payment') {
-        const res = await storageService.savePaymentRequest(paymentData, currentPaymentFormId || undefined);
+        const expVer = currentPaymentFormId && currentPaymentVersion ? currentPaymentVersion : undefined;
+        const res = await storageService.savePaymentRequest(paymentData, currentPaymentFormId || undefined, expVer);
         if (res.id) {
+          const newVer = typeof res.version === 'number' ? res.version : (currentPaymentVersion || 1) + 1;
           setCurrentPaymentFormId(res.id);
+          setCurrentPaymentVersion(newVer);
           setPendingArchive({
             formId: res.id,
             formType: 'payment',
             snapshotJson: JSON.stringify(paymentData),
+            version: newVer,
           });
         }
         setStatusMessage(currentPaymentFormId ? '請款單已成功更新！' : '請款單已成功儲存！');
       }
       setTimeout(() => setStatusMessage(null), 3500);
     } catch (err: any) {
-      alert(`儲存表單失敗：${err.message || err}`);
+      if (err?.code === 'VERSION_CONFLICT' || err?.message?.includes('其他使用者更新')) {
+        alert('此表單已由其他使用者更新，為避免覆蓋最新資料，請重新載入最新版本後再編輯。');
+      } else {
+        alert(`儲存表單失敗：${err.message || err}`);
+      }
       setStatusMessage(null);
     } finally {
       setIsProcessing(false);
@@ -403,6 +437,7 @@ const MainApp: React.FC = () => {
       if (confirm('確定要建立全新用印／簽呈表單嗎？未儲存的變更將會遺失。')) {
         setSealData(INITIAL_SEAL_APPROVAL_DATA);
         setCurrentSealFormId(null);
+        setCurrentSealVersion(null);
         setPendingArchive(null);
         setErrors({});
         setStatusMessage('已切換為全新用印／簽呈表單');
@@ -412,6 +447,7 @@ const MainApp: React.FC = () => {
       if (confirm('確定要建立全新請款單表單嗎？未儲存的變更將會遺失。')) {
         setPaymentData(INITIAL_PAYMENT_REQUEST_DATA);
         setCurrentPaymentFormId(null);
+        setCurrentPaymentVersion(null);
         setPendingArchive(null);
         setErrors({});
         setStatusMessage('已切換為全新請款單');
@@ -426,6 +462,7 @@ const MainApp: React.FC = () => {
       const hydrated = deserializeSealApproval(record);
       setSealData(hydrated);
       setCurrentSealFormId(record.formId);
+      setCurrentSealVersion(typeof record.version === 'number' ? record.version : Number(record.version) || 1);
       setPendingArchive(null);
       setErrors({});
       setActiveTab('seal');
@@ -442,6 +479,7 @@ const MainApp: React.FC = () => {
       const hydrated = deserializePaymentRequest(record);
       setPaymentData(hydrated);
       setCurrentPaymentFormId(record.formId);
+      setCurrentPaymentVersion(typeof record.version === 'number' ? record.version : Number(record.version) || 1);
       setPendingArchive(null);
       setErrors({});
       setActiveTab('payment');

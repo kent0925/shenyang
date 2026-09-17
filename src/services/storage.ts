@@ -5,8 +5,8 @@ import { serializeSealApproval, serializePaymentRequest } from './formAdapters';
 import { syncVendorMasterAfterPaymentSave } from './vendorSync';
 
 export interface StorageService {
-  saveSealApproval(data: SealApprovalData, formId?: string): Promise<{ success: boolean; id?: string }>;
-  savePaymentRequest(data: PaymentRequestData, formId?: string): Promise<{ success: boolean; id?: string }>;
+  saveSealApproval(data: SealApprovalData, formId?: string, expectedVersion?: number): Promise<{ success: boolean; id?: string; version?: number }>;
+  savePaymentRequest(data: PaymentRequestData, formId?: string, expectedVersion?: number): Promise<{ success: boolean; id?: string; version?: number }>;
 }
 
 /**
@@ -14,20 +14,20 @@ export interface StorageService {
  * 將前端領域表單透過 formAdapters 序列化後，呼叫 backendStorageService.saveForm 存入 GAS 後端。
  */
 export class BackendStorageAdapterService implements StorageService {
-  async saveSealApproval(data: SealApprovalData, formId?: string): Promise<{ success: boolean; id?: string }> {
-    const payload = serializeSealApproval(data, formId);
+  async saveSealApproval(data: SealApprovalData, formId?: string, expectedVersion?: number): Promise<{ success: boolean; id?: string; version?: number }> {
+    const payload = serializeSealApproval(data, formId, expectedVersion);
     const record = await backendStorageService.saveForm(payload);
-    return { success: true, id: record.formId };
+    return { success: true, id: record.formId, version: record.version };
   }
 
-  async savePaymentRequest(data: PaymentRequestData, formId?: string): Promise<{ success: boolean; id?: string }> {
-    const payload = serializePaymentRequest(data, formId);
+  async savePaymentRequest(data: PaymentRequestData, formId?: string, expectedVersion?: number): Promise<{ success: boolean; id?: string; version?: number }> {
+    const payload = serializePaymentRequest(data, formId, expectedVersion);
     const record = await backendStorageService.saveForm(payload);
     // 請款單成功儲存後，非同步建立或補充廠商主檔與匯款帳號（若失敗不影響請款單儲存結果）
     syncVendorMasterAfterPaymentSave(data).catch((err) => {
       console.warn('[VendorSync] 後續更新廠商主檔發生非預期錯誤:', err);
     });
-    return { success: true, id: record.formId };
+    return { success: true, id: record.formId, version: record.version };
   }
 }
 

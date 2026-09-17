@@ -764,114 +764,132 @@ function handleSaveForm(payload) {
   }
   if (isBudgetedPayment && !subProjectId) throw createApiError('VALIDATION_ERROR', '有預算請款必須提供分案編號');
 
-  // Concurrency 防線：針對有預算之請款單儲存，使用 LockService 避免併發超額
+  // Concurrency 防線：針對更新既有表單 (formId) 或有預算請款儲存，使用 LockService
+  var needsLock = Boolean(formId) || isBudgetedPayment;
   var lock = null;
-  if (isBudgetedPayment && typeof LockService !== 'undefined' && LockService.getScriptLock) {
+  if (needsLock && typeof LockService !== 'undefined' && LockService.getScriptLock) {
     try {
       lock = LockService.getScriptLock();
       if (lock) {
         lock.waitLock(30000);
       }
     } catch (lockErr) {
-      throw createApiError('INTERNAL_ERROR', '預算資料庫忙碌中，請稍候重試');
+      throw createApiError('INTERNAL_ERROR', '系統資料庫忙碌中，請稍候重試');
     }
   }
 
   try {
-    // 執行伺服器端預算權威驗證
-    if (isBudgetedPayment) {
-      validatePaymentBudget(year, payload, formId || undefined);
-    }
-
     var yearSs = getYearDatabase(year) || createYearDatabase(year);
     var sheet = yearSs.getSheetByName(SHEETS.FORMS);
 
-  // 安全轉換 payloadJson，防止 [object Object] 寫入
-  var payloadJsonStr = '';
-  if (payload.payloadJson !== undefined && payload.payloadJson !== null) {
-    if (typeof payload.payloadJson === 'string') {
-      payloadJsonStr = payload.payloadJson;
-    } else {
-      try {
-        payloadJsonStr = JSON.stringify(payload.payloadJson);
-      } catch (e) {
-        payloadJsonStr = '{}';
+    // 安全轉換 payloadJson，防止 [object Object] 寫入
+    var payloadJsonStr = '';
+    if (payload.payloadJson !== undefined && payload.payloadJson !== null) {
+      if (typeof payload.payloadJson === 'string') {
+        payloadJsonStr = payload.payloadJson;
+      } else {
+        try {
+          payloadJsonStr = JSON.stringify(payload.payloadJson);
+        } catch (e) {
+          payloadJsonStr = '{}';
+        }
       }
     }
-  }
 
-  var amount = Number(payload.amount) || 0;
-  var version = Number(payload.version) || 1;
+    var amount = Number(payload.amount) || 0;
 
-  if (formId) {
-    // 更新既有表單
-    var rowIndex = findRowIndexById(sheet, formId);
-    if (rowIndex === -1) {
-      throw createApiError('NOT_FOUND', '找不到表單編號: ' + formId);
+    if (formId) {
+      // 1. Authoritative read (在 Lock 內讀取權威現況)
+      var rowIndex = findRowIndexById(sheet, formId);
+      if (rowIndex === -1) {
+        throw createApiError('NOT_FOUND', '找不到表單編號: ' + formId);
+      }
+
+      var numCols = SCHEMAS[SHEETS.FORMS].columns.length;
+      var existingRow = sheet.getRange(rowIndex, 1, 1, numCols).getValues()[0];
+      var existingObj = rowToObject(SHEETS.FORMS, existingRow);
+
+      // 2. Version check (樂觀併發防護)
+      var currentVersion = Number(existingObj.version) || 1;
+      var expVer = payload.expectedVersion !== undefined && payload.expectedVersion !== null
+        ? Number(payload.expectedVersion)
+        : null;
+
+      if (expVer === null || isNaN(expVer) || expVer <= 0 || !Number.isInteger(expVer) || expVer !== currentVersion) {
+        throw createApiError(
+          'VERSION_CONFLICT',
+          '此表單已由其他使用者更新，為避免覆蓋最新資料，請重新載入後再編輯。'
+        );
+      }
+
+      // 3. 執行伺服器端預算權威驗證
+      if (isBudgetedPayment) {
+        validatePaymentBudget(year, payload, formId);
+      }
+
+      var updatedObj = {
+        formId: existingObj.formId,
+        formType: payload.formType || existingObj.formType,
+        status: payload.status || existingObj.status,
+        createdAt: existingObj.createdAt,
+        updatedAt: getCurrentTimestamp(),
+        createdBy: payload.createdBy !== undefined ? payload.createdBy : existingObj.createdBy,
+        company: payload.company || existingObj.company,
+        projectId: payload.projectId !== undefined ? payload.projectId : existingObj.projectId,
+        projectName: payload.projectName !== undefined ? payload.projectName : existingObj.projectName,
+        subProjectId: payload.subProjectId !== undefined ? payload.subProjectId : (existingObj.subProjectId || ''),
+        subProjectName: formSub ? formSub.subProjectName : (payload.subProjectName !== undefined ? payload.subProjectName : (existingObj.subProjectName || '')),
+        vendorId: payload.vendorId !== undefined ? payload.vendorId : existingObj.vendorId,
+        vendorName: payload.vendorName !== undefined ? payload.vendorName : existingObj.vendorName,
+        vendorTaxId: payload.vendorTaxId !== undefined ? payload.vendorTaxId : existingObj.vendorTaxId,
+        budgetType: payload.budgetType || existingObj.budgetType || 'budgeted',
+        budgetItemId: payload.budgetItemId !== undefined ? payload.budgetItemId : existingObj.budgetItemId,
+        amount: payload.amount !== undefined ? amount : existingObj.amount,
+        payloadJson: payloadJsonStr || existingObj.payloadJson,
+        excelFileId: payload.excelFileId !== undefined ? payload.excelFileId : existingObj.excelFileId,
+        pdfFileId: payload.pdfFileId !== undefined ? payload.pdfFileId : existingObj.pdfFileId,
+        version: currentVersion + 1,
+      };
+
+      var updatedRow = objectToRow(SHEETS.FORMS, updatedObj);
+      sheet.getRange(rowIndex, 1, 1, updatedRow.length).setValues([updatedRow]);
+      return updatedObj;
+    } else {
+      // 新增表單
+      // 執行伺服器端預算權威驗證
+      if (isBudgetedPayment) {
+        validatePaymentBudget(year, payload, undefined);
+      }
+
+      var newFormId = getNextId(ID_TYPES.FORM, year);
+      var newFormObj = {
+        formId: newFormId,
+        formType: payload.formType,
+        status: payload.status ? String(payload.status).trim() : 'draft',
+        createdAt: getCurrentTimestamp(),
+        updatedAt: getCurrentTimestamp(),
+        createdBy: payload.createdBy ? String(payload.createdBy).trim() : '',
+        company: String(payload.company).trim(),
+        projectId: payload.projectId ? String(payload.projectId).trim() : '',
+        projectName: payload.projectName ? String(payload.projectName).trim() : '',
+        subProjectId: subProjectId,
+        subProjectName: formSub ? formSub.subProjectName : (payload.subProjectName ? String(payload.subProjectName).trim() : ''),
+        vendorId: payload.vendorId ? String(payload.vendorId).trim() : '',
+        vendorName: payload.vendorName ? String(payload.vendorName).trim() : '',
+        vendorTaxId: payload.vendorTaxId ? String(payload.vendorTaxId).trim() : '',
+        budgetType: payload.budgetType ? String(payload.budgetType).trim() : 'budgeted',
+        budgetItemId: payload.budgetItemId ? String(payload.budgetItemId).trim() : '',
+        amount: amount,
+        payloadJson: payloadJsonStr,
+        excelFileId: payload.excelFileId ? String(payload.excelFileId).trim() : '',
+        pdfFileId: payload.pdfFileId ? String(payload.pdfFileId).trim() : '',
+        version: 1,
+      };
+
+      var newRow = objectToRow(SHEETS.FORMS, newFormObj);
+      sheet.appendRow(newRow);
+      return newFormObj;
     }
-
-    var numCols = SCHEMAS[SHEETS.FORMS].columns.length;
-    var existingRow = sheet.getRange(rowIndex, 1, 1, numCols).getValues()[0];
-    var existingObj = rowToObject(SHEETS.FORMS, existingRow);
-
-    var updatedObj = {
-      formId: existingObj.formId,
-      formType: payload.formType || existingObj.formType,
-      status: payload.status || existingObj.status,
-      createdAt: existingObj.createdAt,
-      updatedAt: getCurrentTimestamp(),
-      createdBy: payload.createdBy !== undefined ? payload.createdBy : existingObj.createdBy,
-      company: payload.company || existingObj.company,
-      projectId: payload.projectId !== undefined ? payload.projectId : existingObj.projectId,
-      projectName: payload.projectName !== undefined ? payload.projectName : existingObj.projectName,
-      subProjectId: payload.subProjectId !== undefined ? payload.subProjectId : (existingObj.subProjectId || ''),
-      subProjectName: formSub ? formSub.subProjectName : (payload.subProjectName !== undefined ? payload.subProjectName : (existingObj.subProjectName || '')),
-      vendorId: payload.vendorId !== undefined ? payload.vendorId : existingObj.vendorId,
-      vendorName: payload.vendorName !== undefined ? payload.vendorName : existingObj.vendorName,
-      vendorTaxId: payload.vendorTaxId !== undefined ? payload.vendorTaxId : existingObj.vendorTaxId,
-      budgetType: payload.budgetType || existingObj.budgetType || 'budgeted',
-      budgetItemId: payload.budgetItemId !== undefined ? payload.budgetItemId : existingObj.budgetItemId,
-      amount: payload.amount !== undefined ? amount : existingObj.amount,
-      payloadJson: payloadJsonStr || existingObj.payloadJson,
-      excelFileId: payload.excelFileId !== undefined ? payload.excelFileId : existingObj.excelFileId,
-      pdfFileId: payload.pdfFileId !== undefined ? payload.pdfFileId : existingObj.pdfFileId,
-      version: existingObj.version ? Number(existingObj.version) + 1 : version + 1,
-    };
-
-    var updatedRow = objectToRow(SHEETS.FORMS, updatedObj);
-    sheet.getRange(rowIndex, 1, 1, updatedRow.length).setValues([updatedRow]);
-    return updatedObj;
-  } else {
-    // 新增表單（本階段只存表單紀錄，不自動新增 Claim）
-    var newFormId = getNextId(ID_TYPES.FORM, year);
-    var newFormObj = {
-      formId: newFormId,
-      formType: payload.formType,
-      status: payload.status ? String(payload.status).trim() : 'draft',
-      createdAt: getCurrentTimestamp(),
-      updatedAt: getCurrentTimestamp(),
-      createdBy: payload.createdBy ? String(payload.createdBy).trim() : '',
-      company: String(payload.company).trim(),
-      projectId: payload.projectId ? String(payload.projectId).trim() : '',
-      projectName: payload.projectName ? String(payload.projectName).trim() : '',
-      subProjectId: subProjectId,
-      subProjectName: formSub ? formSub.subProjectName : (payload.subProjectName ? String(payload.subProjectName).trim() : ''),
-      vendorId: payload.vendorId ? String(payload.vendorId).trim() : '',
-      vendorName: payload.vendorName ? String(payload.vendorName).trim() : '',
-      vendorTaxId: payload.vendorTaxId ? String(payload.vendorTaxId).trim() : '',
-      budgetType: payload.budgetType ? String(payload.budgetType).trim() : 'budgeted',
-      budgetItemId: payload.budgetItemId ? String(payload.budgetItemId).trim() : '',
-      amount: amount,
-      payloadJson: payloadJsonStr,
-      excelFileId: payload.excelFileId ? String(payload.excelFileId).trim() : '',
-      pdfFileId: payload.pdfFileId ? String(payload.pdfFileId).trim() : '',
-      version: version,
-    };
-
-    var newRow = objectToRow(SHEETS.FORMS, newFormObj);
-    sheet.appendRow(newRow);
-    return newFormObj;
-  }
   } finally {
     if (lock) {
       try {
@@ -973,6 +991,13 @@ function handleArchiveFormFiles(payload) {
   }
 
   var formId = String(payload.formId).trim();
+
+  // 驗證 expectedVersion 必填且為正整數
+  if (payload.expectedVersion === undefined || payload.expectedVersion === null || isNaN(Number(payload.expectedVersion)) || Number(payload.expectedVersion) <= 0 || !Number.isInteger(Number(payload.expectedVersion))) {
+    throw createApiError('VALIDATION_ERROR', '缺少或無效之預期版本 (expectedVersion 必須為正整數)');
+  }
+  var expectedVersion = Number(payload.expectedVersion);
+
   var year = payload.year;
   if (!year) {
     var match = formId.match(/^FRM-(\d{4})-/);
@@ -985,6 +1010,12 @@ function handleArchiveFormFiles(payload) {
 
   // 讀取 authoritative FormRecord（不相信 client 傳來的 formType/version）
   var authoritativeForm = handleGetForm({ formId: formId, year: year });
+
+  // 初次檢核版本：currentVersion 必須等於 expectedVersion
+  var currentVersion = authoritativeForm.version ? Number(authoritativeForm.version) : 1;
+  if (currentVersion !== expectedVersion) {
+    throw createApiError('VERSION_CONFLICT', '此表單已由其他使用者更新，為避免覆蓋最新資料，請重新載入後再編輯。');
+  }
 
   // 依據 authoritative formType 強制驗證 MIME 類型
   var expectedExcelMime = authoritativeForm.formType === 'payment_request'
@@ -1001,10 +1032,9 @@ function handleArchiveFormFiles(payload) {
     throw createApiError('VALIDATION_ERROR', 'PDF MIME 類型不符: ' + payload.pdf.mimeType + ' (預期: application/pdf)');
   }
 
-  var version = authoritativeForm.version ? Number(authoritativeForm.version) : 1;
   var formTypeFolderName = authoritativeForm.formType === 'payment_request' ? '請款單' : '用印簽呈';
 
-  // 依據階層取得／建立 Drive 資料夾
+  // 依據階層取得／建立 Drive 資料夾（固定以 expectedVersion 建立資料夾）
   // DRIVE_ROOT_FOLDER_ID -> 表單歸檔 -> YYYY -> 請款單/用印簽呈 -> FORM_ID -> vVERSION
   var rootFolderId = getDriveRootFolderId();
   var rootFolder = DriveApp.getFolderById(rootFolderId);
@@ -1012,7 +1042,7 @@ function handleArchiveFormFiles(payload) {
   var yearFolder = getOrCreateChildFolder(archiveRoot, String(year));
   var typeFolder = getOrCreateChildFolder(yearFolder, formTypeFolderName);
   var formFolder = getOrCreateChildFolder(typeFolder, formId);
-  var versionFolder = getOrCreateChildFolder(formFolder, 'v' + version);
+  var versionFolder = getOrCreateChildFolder(formFolder, 'v' + expectedVersion);
 
   // 記錄先前權威記錄中的檔案編號（用於成功後之同版本精準清理）
   var priorExcelFileId = authoritativeForm.excelFileId ? String(authoritativeForm.excelFileId).trim() : '';
@@ -1032,10 +1062,36 @@ function handleArchiveFormFiles(payload) {
     var pdfBlob = Utilities.newBlob(pdfBytes, payload.pdf.mimeType, payload.pdf.fileName);
     newPdfFile = versionFolder.createFile(pdfBlob);
 
-    // 原子性更新 FormRecord
-    updateFormArchivedFileIds(year, formId, newExcelFile.getId(), newPdfFile.getId());
+    // 取得 ScriptLock，執行最終 CAS 防線（避免產檔期間被另一請求插入 saveForm）
+    var archiveLock = null;
+    if (typeof LockService !== 'undefined' && LockService.getScriptLock) {
+      try {
+        archiveLock = LockService.getScriptLock();
+        if (archiveLock) {
+          archiveLock.waitLock(30000);
+        }
+      } catch (lockErr) {
+        throw createApiError('INTERNAL_ERROR', '系統資料庫忙碌中，請稍候重試');
+      }
+    }
+
+    try {
+      // 再次 authoritative read，確保版本未被更動
+      var secondCheckForm = handleGetForm({ formId: formId, year: year });
+      var secondVersion = secondCheckForm.version ? Number(secondCheckForm.version) : 1;
+      if (secondVersion !== expectedVersion) {
+        throw createApiError('VERSION_CONFLICT', '此表單已由其他使用者更新，為避免覆蓋最新資料，請重新載入後再編輯。');
+      }
+
+      // 原子性更新 FormRecord
+      updateFormArchivedFileIds(year, formId, newExcelFile.getId(), newPdfFile.getId());
+    } finally {
+      if (archiveLock) {
+        try { archiveLock.releaseLock(); } catch (e) {}
+      }
+    }
   } catch (archiveErr) {
-    // 原子性回滾：若任何步驟失敗，trash 本次新建立的檔案，絕不更動 FormRecord 與舊檔案
+    // 原子性回滾：若任何步驟失敗（含 CAS 版本衝突），trash 本次新建立的檔案，絕不更動 FormRecord 與舊檔案
     if (newExcelFile) {
       try { newExcelFile.setTrashed(true); } catch (e) {}
     }
@@ -1087,7 +1143,7 @@ function handleArchiveFormFiles(payload) {
 
   return {
     formId: formId,
-    version: version,
+    version: expectedVersion,
     excelFileId: newExcelFile.getId(),
     pdfFileId: newPdfFile.getId(),
     excelFileName: payload.excel.fileName,

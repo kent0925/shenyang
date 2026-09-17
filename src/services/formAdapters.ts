@@ -55,7 +55,7 @@ export function parseSafeAmount(val?: string | number): number {
  * - payloadJson: JSON.stringify(sealData)
  * - 其餘未包含之欄位（如 vendor, amount 等）保持 undefined，絕不憑空捏造
  */
-export function serializeSealApproval(data: SealApprovalData, formId?: string): SaveFormPayload {
+export function serializeSealApproval(data: SealApprovalData, formId?: string, expectedVersion?: number): SaveFormPayload {
   const year = extractYearFromDate(data.applyDate);
 
   const payload: SaveFormPayload = {
@@ -68,6 +68,9 @@ export function serializeSealApproval(data: SealApprovalData, formId?: string): 
 
   if (formId && formId.trim() !== '') {
     payload.formId = formId.trim();
+    if (typeof expectedVersion === 'number' && Number.isInteger(expectedVersion) && expectedVersion > 0) {
+      payload.expectedVersion = expectedVersion;
+    }
   }
 
   return payload;
@@ -130,7 +133,7 @@ export function deserializeSealApproval(record: FormRecord): SealApprovalData {
  * - budgetItemId: paymentData.budgetItemId (若有)
  * - payloadJson: JSON.stringify(paymentData)
  */
-export function serializePaymentRequest(data: PaymentRequestData, formId?: string): SaveFormPayload {
+export function serializePaymentRequest(data: PaymentRequestData, formId?: string, expectedVersion?: number): SaveFormPayload {
   const year = extractYearFromDate(data.applyDate);
   const amount = parseSafeAmount(data.currentAmount);
 
@@ -154,6 +157,9 @@ export function serializePaymentRequest(data: PaymentRequestData, formId?: strin
 
   if (formId && formId.trim() !== '') {
     payload.formId = formId.trim();
+    if (typeof expectedVersion === 'number' && Number.isInteger(expectedVersion) && expectedVersion > 0) {
+      payload.expectedVersion = expectedVersion;
+    }
   }
 
   return payload;
