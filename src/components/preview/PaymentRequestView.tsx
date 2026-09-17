@@ -194,10 +194,32 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
               <div className="flex flex-wrap items-center gap-4">
                 <span>{sr.noEndorse ? '☑' : '☐'} 請勿禁止背書轉讓</span>
                 <span>
-                  {sr.postDatedCheck ? '☑' : '☐'} 請付遠期支票予受款者，並於{' '}
-                  <span className="font-mono underline font-bold px-1">{postDatedParts?.rocYear || '　'}</span>年{' '}
-                  <span className="font-mono underline font-bold px-1">{postDatedParts?.month || '　'}</span>月{' '}
-                  <span className="font-mono underline font-bold px-1">{postDatedParts?.day || '　'}</span>日付予支票。
+                  {sr.postDatedCheck ? '☑' : '☐'}{' '}
+                  {(() => {
+                    if (!sr.postDatedCheck) {
+                      return '請付遠期支票予受款者';
+                    }
+                    if (sr.chequeTimingMode === 'immediate') {
+                      return '請付遠期支票予受款者－即期';
+                    }
+                    if (sr.chequeTimingMode === 'days' && sr.chequeDays) {
+                      return `請付遠期支票予受款者－${sr.chequeDays} 天`;
+                    }
+                    if (sr.chequeTimingMode === 'date' && sr.postDatedDate) {
+                      return `請付遠期支票予受款者－指定兌現日期 ${sr.postDatedDate.replace(/-/g, '/')}`;
+                    }
+                    if (postDatedParts) {
+                      return (
+                        <>
+                          請付遠期支票予受款者，並於{' '}
+                          <span className="font-mono underline font-bold px-1">{postDatedParts.rocYear}</span>年{' '}
+                          <span className="font-mono underline font-bold px-1">{postDatedParts.month}</span>月{' '}
+                          <span className="font-mono underline font-bold px-1">{postDatedParts.day}</span>日付予支票。
+                        </>
+                      );
+                    }
+                    return '請付遠期支票予受款者';
+                  })()}
                 </span>
               </div>
             </td>

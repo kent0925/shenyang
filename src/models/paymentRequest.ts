@@ -15,6 +15,8 @@ export interface SpecialRequirements {
   postDatedDate: string;    // 遠期支票到期日 YYYY-MM-DD
   wireTransfer: boolean;    // 請以匯款支付
   offsetBorrowing: boolean; // 請沖銷借支款
+  chequeTimingMode?: 'immediate' | 'days' | 'date'; // 遠期支票兌現條件三選一：即期 / 天數 / 指定兌現日期
+  chequeDays?: number;      // 遠期支票天數（正整數）
 }
 
 export interface PaymentRequestData {
@@ -107,6 +109,8 @@ export const INITIAL_PAYMENT_REQUEST_DATA: PaymentRequestData = {
     postDatedDate: '',
     wireTransfer: true,
     offsetBorrowing: false,
+    chequeTimingMode: undefined,
+    chequeDays: undefined,
   },
   description: '',
 };

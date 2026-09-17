@@ -95,7 +95,8 @@ export async function generatePaymentRequestExcel(data: PaymentRequestData): Pro
   // 注意：T13 是原生公式 =H13-I13-L13-N13，T15 同樣為公式，updateSheetCell 含有公式防禦會主動保留！
 
   // 遠期支票到期日 (填入 N21, P21, R21，保留 O21, Q21, S21 的「年月日」字樣)
-  if (data.specialRequirements.postDatedCheck && data.specialRequirements.postDatedDate) {
+  const isDateMode = !data.specialRequirements.chequeTimingMode || data.specialRequirements.chequeTimingMode === 'date';
+  if (data.specialRequirements.postDatedCheck && isDateMode && data.specialRequirements.postDatedDate) {
     const postParts = parseDateParts(data.specialRequirements.postDatedDate);
     if (postParts) {
       sheet1Xml = updateSheetCell(sheet1Xml, 'N21', postParts.rocYear, 'number');
