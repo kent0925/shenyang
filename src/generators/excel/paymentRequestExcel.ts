@@ -94,18 +94,66 @@ export async function generatePaymentRequestExcel(data: PaymentRequestData): Pro
   sheet1Xml = updateSheetCell(sheet1Xml, 'N13', data.penaltyDiscount ? parseFloat(data.penaltyDiscount.replace(/,/g, '')) : null, 'number');
   // 注意：T13 是原生公式 =H13-I13-L13-N13，T15 同樣為公式，updateSheetCell 含有公式防禦會主動保留！
 
-  // 遠期支票到期日 (填入 N21, P21, R21，保留 O21, Q21, S21 的「年月日」字樣)
-  if (data.specialRequirements.postDatedCheck && data.specialRequirements.postDatedDate) {
-    const postParts = parseDateParts(data.specialRequirements.postDatedDate);
-    if (postParts) {
-      sheet1Xml = updateSheetCell(sheet1Xml, 'N21', postParts.rocYear, 'number');
-      sheet1Xml = updateSheetCell(sheet1Xml, 'P21', postParts.month, 'number');
-      sheet1Xml = updateSheetCell(sheet1Xml, 'R21', postParts.day, 'number');
+  // 遠期支票兌現條件呈現（Row 21：J21:M21, N21, O21, P21, Q21, R21, S21, T21:X21）
+  const sr = data.specialRequirements;
+  if (sr.postDatedCheck) {
+    if (sr.chequeTimingMode === 'immediate') {
+      // 即期模式：J21 呈現「請付遠期支票予受款者－即期」，清空後續年月日與付予支票文字
+      sheet1Xml = updateSheetCell(sheet1Xml, 'J21', '請付遠期支票予受款者－即期');
+      sheet1Xml = updateSheetCell(sheet1Xml, 'N21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'O21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'P21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'Q21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'R21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'S21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'T21', null);
+    } else if (sr.chequeTimingMode === 'days' && sr.chequeDays) {
+      // 天數模式：J21 呈現「請付遠期支票予受款者－N 天」，清空後續年月日與付予支票文字
+      sheet1Xml = updateSheetCell(sheet1Xml, 'J21', `請付遠期支票予受款者－${sr.chequeDays} 天`);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'N21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'O21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'P21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'Q21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'R21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'S21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'T21', null);
+    } else if (sr.postDatedDate) {
+      // 指定兌現日期模式（含舊資料無 mode 但有 postDatedDate）：填入 N21(年), P21(月), R21(日)
+      sheet1Xml = updateSheetCell(sheet1Xml, 'J21', '請付遠期支票予受款者，並於');
+      const postParts = parseDateParts(sr.postDatedDate);
+      if (postParts) {
+        sheet1Xml = updateSheetCell(sheet1Xml, 'N21', postParts.rocYear, 'number');
+        sheet1Xml = updateSheetCell(sheet1Xml, 'P21', postParts.month, 'number');
+        sheet1Xml = updateSheetCell(sheet1Xml, 'R21', postParts.day, 'number');
+      } else {
+        sheet1Xml = updateSheetCell(sheet1Xml, 'N21', null);
+        sheet1Xml = updateSheetCell(sheet1Xml, 'P21', null);
+        sheet1Xml = updateSheetCell(sheet1Xml, 'R21', null);
+      }
+      sheet1Xml = updateSheetCell(sheet1Xml, 'O21', '年');
+      sheet1Xml = updateSheetCell(sheet1Xml, 'Q21', '月');
+      sheet1Xml = updateSheetCell(sheet1Xml, 'S21', '日');
+      sheet1Xml = updateSheetCell(sheet1Xml, 'T21', '付予支票。');
+    } else {
+      sheet1Xml = updateSheetCell(sheet1Xml, 'J21', '請付遠期支票予受款者');
+      sheet1Xml = updateSheetCell(sheet1Xml, 'N21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'O21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'P21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'Q21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'R21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'S21', null);
+      sheet1Xml = updateSheetCell(sheet1Xml, 'T21', null);
     }
   } else {
+    // 未勾選遠期支票：保持母版預設狀態
+    sheet1Xml = updateSheetCell(sheet1Xml, 'J21', '請付遠期支票予受款者，並於');
     sheet1Xml = updateSheetCell(sheet1Xml, 'N21', null);
+    sheet1Xml = updateSheetCell(sheet1Xml, 'O21', '年');
     sheet1Xml = updateSheetCell(sheet1Xml, 'P21', null);
+    sheet1Xml = updateSheetCell(sheet1Xml, 'Q21', '月');
     sheet1Xml = updateSheetCell(sheet1Xml, 'R21', null);
+    sheet1Xml = updateSheetCell(sheet1Xml, 'S21', '日');
+    sheet1Xml = updateSheetCell(sheet1Xml, 'T21', '付予支票。');
   }
 
   // 請款說明：先清空 G22:G37 全區

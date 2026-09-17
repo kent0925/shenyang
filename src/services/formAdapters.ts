@@ -212,10 +212,39 @@ export function deserializePaymentRequest(record: FormRecord): PaymentRequestDat
         ...INITIAL_PAYMENT_REQUEST_DATA.bankAccount,
         ...(raw.bankAccount || {}),
       },
-      specialRequirements: {
-        ...INITIAL_PAYMENT_REQUEST_DATA.specialRequirements,
-        ...(raw.specialRequirements || {}),
-      },
+      specialRequirements: (() => {
+        const mergedSr = {
+          ...INITIAL_PAYMENT_REQUEST_DATA.specialRequirements,
+          ...(raw.specialRequirements || {}),
+        };
+
+        // 舊「其他付款方式」多選資料相容正規化：若兩者皆為 true，依一致原則保留 offsetBorrowing
+        if (mergedSr.wireTransfer && mergedSr.offsetBorrowing) {
+          mergedSr.offsetBorrowing = true;
+          mergedSr.wireTransfer = false;
+        }
+
+        // 遠期支票兌現條件之舊資料平滑相容還原
+        if (mergedSr.postDatedCheck) {
+          if (!mergedSr.chequeTimingMode) {
+            // 檢查是否有舊有 15 天 / 30 天字樣或屬性
+            const legacyDays = (raw as any).postDatedTerm || (raw as any).postDatedDays || (raw.specialRequirements as any)?.postDatedDays || (raw.specialRequirements as any)?.postDatedTerm;
+            if (legacyDays === 15 || legacyDays === '15' || legacyDays === '15天' || legacyDays === '15 天') {
+              mergedSr.chequeTimingMode = 'days';
+              mergedSr.chequeDays = 15;
+            } else if (legacyDays === 30 || legacyDays === '30' || legacyDays === '30天' || legacyDays === '30 天') {
+              mergedSr.chequeTimingMode = 'days';
+              mergedSr.chequeDays = 30;
+            } else if (mergedSr.chequeDays && mergedSr.chequeDays > 0) {
+              mergedSr.chequeTimingMode = 'days';
+            } else if (mergedSr.postDatedDate && mergedSr.postDatedDate.trim() !== '') {
+              mergedSr.chequeTimingMode = 'date';
+            }
+          }
+        }
+
+        return mergedSr;
+      })(),
     };
   } catch (err: any) {
     throw new Error(`此表單資料格式無法讀取：${err.message || 'JSON 解析失敗'}`);

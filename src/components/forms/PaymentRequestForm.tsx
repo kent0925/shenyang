@@ -639,6 +639,10 @@ export const PaymentRequestForm: React.FC<Props> = ({
           noCross: false,
           noEndorse: false,
           postDatedDate: '',
+          chequeTimingMode: undefined,
+          chequeDays: undefined,
+          wireTransfer: data.specialRequirements.offsetBorrowing ? false : true,
+          offsetBorrowing: data.specialRequirements.offsetBorrowing ? true : false,
         },
       });
     }
@@ -654,6 +658,8 @@ export const PaymentRequestForm: React.FC<Props> = ({
           cashiersCheck: true,
           postDatedCheck: false,
           postDatedDate: '',
+          chequeTimingMode: undefined,
+          chequeDays: undefined,
         },
       });
     } else if (type === 'postDatedCheck') {
@@ -666,6 +672,60 @@ export const PaymentRequestForm: React.FC<Props> = ({
         },
       });
     }
+  };
+
+  // 遠期支票第二層兌現條件三選一切換（即期、天數、指定兌現日期）
+  const handleSelectChequeTimingMode = (mode: 'immediate' | 'days' | 'date') => {
+    if (mode === 'immediate') {
+      onChange({
+        ...data,
+        specialRequirements: {
+          ...data.specialRequirements,
+          chequeTimingMode: 'immediate',
+          chequeDays: undefined,
+          postDatedDate: '',
+        },
+      });
+    } else if (mode === 'days') {
+      onChange({
+        ...data,
+        specialRequirements: {
+          ...data.specialRequirements,
+          chequeTimingMode: 'days',
+          postDatedDate: '',
+        },
+      });
+    } else if (mode === 'date') {
+      onChange({
+        ...data,
+        specialRequirements: {
+          ...data.specialRequirements,
+          chequeTimingMode: 'date',
+          chequeDays: undefined,
+        },
+      });
+    }
+  };
+
+  // 其他付款方式單選切換（wireTransfer 與 offsetBorrowing 互斥）
+  const handleSelectOtherPaymentMethod = (method: 'wireTransfer' | 'offsetBorrowing') => {
+    onChange({
+      ...data,
+      specialRequirements: {
+        ...data.specialRequirements,
+        // 清理開立支票相關
+        cashiersCheck: false,
+        postDatedCheck: false,
+        noCross: false,
+        noEndorse: false,
+        postDatedDate: '',
+        chequeTimingMode: undefined,
+        chequeDays: undefined,
+        // 單選切換
+        wireTransfer: method === 'wireTransfer',
+        offsetBorrowing: method === 'offsetBorrowing',
+      },
+    });
   };
 
   const payable = calculatePayableAmount(
@@ -1671,16 +1731,94 @@ export const PaymentRequestForm: React.FC<Props> = ({
                       <span>請付遠期支票予受款者</span>
                     </label>
 
-                    {/* 遠期支票指定兌現日期 */}
+                    {/* 遠期支票兌現條件（三選一） */}
                     {data.specialRequirements.postDatedCheck && (
-                      <div className="pl-6 pt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-700">
-                        <span className="font-semibold">指定兌現日期：</span>
-                        <input
-                          type="date"
-                          value={data.specialRequirements.postDatedDate}
-                          onChange={(e) => updateSpecial({ postDatedDate: e.target.value })}
-                          className="px-2.5 py-1 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500 bg-white"
-                        />
+                      <div className="pl-6 pt-2 pb-1 space-y-2 border-l-2 border-blue-200 ml-2 mt-1">
+                        <div className="text-xs font-semibold text-slate-700">
+                          兌現條件（三選一）
+                        </div>
+
+                        {/* 1. 即期 */}
+                        <div>
+                          <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-800">
+                            <input
+                              type="radio"
+                              name="chequeTimingMode"
+                              value="immediate"
+                              checked={data.specialRequirements.chequeTimingMode === 'immediate'}
+                              onChange={() => handleSelectChequeTimingMode('immediate')}
+                              className="w-3.5 h-3.5 text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                            />
+                            <span className="font-medium">即期</span>
+                          </label>
+                        </div>
+
+                        {/* 2. 天數 */}
+                        <div className="space-y-1">
+                          <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-800">
+                            <input
+                              type="radio"
+                              name="chequeTimingMode"
+                              value="days"
+                              checked={data.specialRequirements.chequeTimingMode === 'days'}
+                              onChange={() => handleSelectChequeTimingMode('days')}
+                              className="w-3.5 h-3.5 text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                            />
+                            <span className="font-medium">天數</span>
+                          </label>
+                          {data.specialRequirements.chequeTimingMode === 'days' && (
+                            <div className="flex items-center gap-1.5 pl-6 pt-1 text-xs text-slate-700">
+                              <span>天數</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="例如 45"
+                                value={data.specialRequirements.chequeDays ?? ''}
+                                onChange={(e) => {
+                                  const raw = e.target.value.replace(/\D/g, '');
+                                  const val = raw ? parseInt(raw, 10) : undefined;
+                                  if (val === 0) return; // 不接受 0、負數
+                                  updateSpecial({ chequeDays: val });
+                                }}
+                                className="w-20 px-2 py-1 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500 bg-white font-mono text-center"
+                              />
+                              <span>天</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 3. 指定兌現日期 */}
+                        <div className="space-y-1">
+                          <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-800">
+                            <input
+                              type="radio"
+                              name="chequeTimingMode"
+                              value="date"
+                              checked={data.specialRequirements.chequeTimingMode === 'date'}
+                              onChange={() => handleSelectChequeTimingMode('date')}
+                              className="w-3.5 h-3.5 text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                            />
+                            <span className="font-medium">指定兌現日期</span>
+                          </label>
+                          {data.specialRequirements.chequeTimingMode === 'date' && (
+                            <div className="pl-6 pt-1">
+                              <input
+                                type="date"
+                                value={data.specialRequirements.postDatedDate || ''}
+                                onChange={(e) => updateSpecial({ postDatedDate: e.target.value })}
+                                className="px-2.5 py-1 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500 bg-white font-mono"
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 遠期支票兌現條件驗證錯誤提示 */}
+                        {errors.chequeTerms && (
+                          <div className="text-xs text-rose-600 font-medium flex items-center gap-1.5 pt-1">
+                            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>{errors.chequeTerms}</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1738,24 +1876,31 @@ export const PaymentRequestForm: React.FC<Props> = ({
             </label>
 
             {activeGroup === 'other' && (
-              <div className="mt-3 pt-3 border-t border-slate-100 pl-6">
+              <div className="mt-3 pt-3 border-t border-slate-100 pl-6 space-y-2">
+                <div className="text-xs font-semibold text-slate-700 mb-2">
+                  其他付款方式（單選）
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-sm">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
-                      type="checkbox"
-                      checked={data.specialRequirements.wireTransfer}
-                      onChange={(e) => updateSpecial({ wireTransfer: e.target.checked })}
-                      className="rounded text-blue-600 focus:ring-blue-500"
+                      type="radio"
+                      name="otherPaymentMethod"
+                      value="wireTransfer"
+                      checked={Boolean(data.specialRequirements.wireTransfer)}
+                      onChange={() => handleSelectOtherPaymentMethod('wireTransfer')}
+                      className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
                     />
                     <span>請以匯款支付</span>
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
-                      type="checkbox"
-                      checked={data.specialRequirements.offsetBorrowing}
-                      onChange={(e) => updateSpecial({ offsetBorrowing: e.target.checked })}
-                      className="rounded text-blue-600 focus:ring-blue-500"
+                      type="radio"
+                      name="otherPaymentMethod"
+                      value="offsetBorrowing"
+                      checked={Boolean(data.specialRequirements.offsetBorrowing)}
+                      onChange={() => handleSelectOtherPaymentMethod('offsetBorrowing')}
+                      className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
                     />
                     <span>請沖銷借支款</span>
                   </label>
