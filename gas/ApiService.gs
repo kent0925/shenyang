@@ -1036,18 +1036,36 @@ function handleArchiveFormFiles(payload) {
 
   // 依據階層取得／建立 Drive 資料夾（固定以 expectedVersion 建立資料夾）
   // DRIVE_ROOT_FOLDER_ID -> 表單歸檔 -> YYYY -> 請款單/用印簽呈 -> FORM_ID -> vVERSION
-  var rootFolderId = getDriveRootFolderId();
-  var rootFolder = DriveApp.getFolderById(rootFolderId);
-  var archiveRoot = getOrCreateChildFolder(rootFolder, '表單歸檔');
-  var yearFolder = getOrCreateChildFolder(archiveRoot, String(year));
-  var typeFolder = getOrCreateChildFolder(yearFolder, formTypeFolderName);
-  var formFolder = getOrCreateChildFolder(typeFolder, formId);
-  var versionFolder = getOrCreateChildFolder(formFolder, 'v' + expectedVersion);
+  // 短時間 ScriptLock 保護 folder resolve/create，防止併發請求重複建立兩個 vN 資料夾
+  var folderLock = null;
+  if (typeof LockService !== 'undefined' && LockService.getScriptLock) {
+    try {
+      folderLock = LockService.getScriptLock();
+      if (folderLock) {
+        folderLock.waitLock(30000);
+      }
+    } catch (lockErr) {
+      throw createApiError('INTERNAL_ERROR', '系統資料庫忙碌中，請稍候重試');
+    }
+  }
 
-  // 記錄先前權威記錄中的檔案編號（用於成功後之同版本精準清理）
-  var priorExcelFileId = authoritativeForm.excelFileId ? String(authoritativeForm.excelFileId).trim() : '';
-  var priorPdfFileId = authoritativeForm.pdfFileId ? String(authoritativeForm.pdfFileId).trim() : '';
+  var versionFolder = null;
+  try {
+    var rootFolderId = getDriveRootFolderId();
+    var rootFolder = DriveApp.getFolderById(rootFolderId);
+    var archiveRoot = getOrCreateChildFolder(rootFolder, '表單歸檔');
+    var yearFolder = getOrCreateChildFolder(archiveRoot, String(year));
+    var typeFolder = getOrCreateChildFolder(yearFolder, formTypeFolderName);
+    var formFolder = getOrCreateChildFolder(typeFolder, formId);
+    versionFolder = getOrCreateChildFolder(formFolder, 'v' + expectedVersion);
+  } finally {
+    if (folderLock) {
+      try { folderLock.releaseLock(); } catch (e) {}
+    }
+  }
 
+  var replacedExcelFileId = '';
+  var replacedPdfFileId = '';
   var newExcelFile = null;
   var newPdfFile = null;
 
@@ -1083,6 +1101,10 @@ function handleArchiveFormFiles(payload) {
         throw createApiError('VERSION_CONFLICT', '此表單已由其他使用者更新，為避免覆蓋最新資料，請重新載入後再編輯。');
       }
 
+      // 記錄本次 CAS 真正被取代的 authoritative 檔案 ID（避免併發重試下殘留孤兒檔案）
+      replacedExcelFileId = secondCheckForm.excelFileId ? String(secondCheckForm.excelFileId).trim() : '';
+      replacedPdfFileId = secondCheckForm.pdfFileId ? String(secondCheckForm.pdfFileId).trim() : '';
+
       // 原子性更新 FormRecord
       updateFormArchivedFileIds(year, formId, newExcelFile.getId(), newPdfFile.getId());
     } finally {
@@ -1101,10 +1123,10 @@ function handleArchiveFormFiles(payload) {
     throw archiveErr;
   }
 
-  // 成功後：優先僅清理位於「同一版本資料夾」內之先前權威檔案 pair，跨版本舊檔案永久保留！
-  if (priorExcelFileId && priorExcelFileId !== newExcelFile.getId()) {
+  // 成功後：優先僅清理位於「同一版本資料夾」內之本次真正被取代的先前檔案 pair，跨版本舊檔案永久保留！
+  if (replacedExcelFileId && replacedExcelFileId !== newExcelFile.getId()) {
     try {
-      var oldExcelFile = DriveApp.getFileById(priorExcelFileId);
+      var oldExcelFile = DriveApp.getFileById(replacedExcelFileId);
       var isSameVer = false;
       var parentsIt = oldExcelFile.getParents ? oldExcelFile.getParents() : null;
       if (parentsIt && parentsIt.hasNext()) {
@@ -1121,9 +1143,9 @@ function handleArchiveFormFiles(payload) {
       }
     } catch (cleanExcelErr) {}
   }
-  if (priorPdfFileId && priorPdfFileId !== newPdfFile.getId()) {
+  if (replacedPdfFileId && replacedPdfFileId !== newPdfFile.getId()) {
     try {
-      var oldPdfFile = DriveApp.getFileById(priorPdfFileId);
+      var oldPdfFile = DriveApp.getFileById(replacedPdfFileId);
       var isSameVerPdf = false;
       var parentsItPdf = oldPdfFile.getParents ? oldPdfFile.getParents() : null;
       if (parentsItPdf && parentsItPdf.hasNext()) {
