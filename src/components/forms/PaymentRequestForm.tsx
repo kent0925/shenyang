@@ -704,10 +704,10 @@ export const PaymentRequestForm: React.FC<Props> = ({
             />
           </div>
 
-          {/* 合約/訂購單編號 (I7) */}
+          {/* 合約/訂購單編號 */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              合約／訂購單編號 (I7)
+              合約／訂購單編號
             </label>
             <input
               type="text"
@@ -936,12 +936,12 @@ export const PaymentRequestForm: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* 區塊二：受款人與匯款資訊 (N5, N7) */}
+      {/* 區塊二：受款人與匯款資訊 */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
             <Building className="w-4 h-4 text-blue-600" />
-            <h3 className="text-sm font-bold text-slate-800">受款人／廠商與匯款帳號 (N5, N7)</h3>
+            <h3 className="text-sm font-bold text-slate-800">受款人／廠商與匯款帳號</h3>
           </div>
           {/* 廠商主檔快速帶入選單 */}
           <div className="flex items-center gap-2">
@@ -961,7 +961,7 @@ export const PaymentRequestForm: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* 統一編號與受款人/廠商 (N5) */}
+        {/* 統一編號與受款人/廠商 */}
         <div className="p-3 bg-white border border-slate-200 rounded-lg mb-4 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* 統一編號 */}
@@ -1045,11 +1045,11 @@ export const PaymentRequestForm: React.FC<Props> = ({
               )}
             </div>
 
-            {/* 受款人/廠商名稱 (N5) */}
+            {/* 受款人/廠商名稱 */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-semibold text-slate-700">
-                  受款人／廠商名稱 (N5) <span className="text-red-500">*</span>
+                  受款人／廠商名稱 <span className="text-red-500">*</span>
                 </label>
                 {data.vendorId && (
                   <span className="text-[11px] text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded">
@@ -1069,12 +1069,12 @@ export const PaymentRequestForm: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* 金融機構與帳號結構化輸入 (N7) */}
+        {/* 金融機構與帳號結構化輸入 */}
         <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
               <Landmark className="w-4 h-4 text-slate-600" />
-              <span>匯款金融機構與帳號明細 (N7)</span>
+              <span>匯款金融機構與帳號明細</span>
             </div>
             <span className="text-[11px] text-slate-400">依官方金融機構代碼與分支機構資料庫雙向連動</span>
           </div>
@@ -1332,7 +1332,7 @@ export const PaymentRequestForm: React.FC<Props> = ({
 
           <div className="p-2.5 bg-blue-50 border border-blue-200 rounded flex items-center justify-between">
             <span className="text-xs font-semibold text-blue-900">
-              (5) 實付金額預覽（Excel 將以原生公式 =H13-I13-L13-N13 計算）：
+              實付金額預覽：
             </span>
             <span className="text-base font-bold font-mono text-blue-700">
               NT$ {formatCurrency(payable)}

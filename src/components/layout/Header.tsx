@@ -10,8 +10,7 @@ export const Header: React.FC = () => {
             <FileSpreadsheet className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-900 leading-tight">公司表單產生器</h1>
-            <p className="text-xs text-slate-500">標準母版 Excel (XLSM/XLSX) 與 PDF 快速輸出工具</p>
+            <h1 className="text-xl font-bold text-slate-900 leading-tight">簽呈計價表單產生器</h1>
           </div>
         </div>
 
