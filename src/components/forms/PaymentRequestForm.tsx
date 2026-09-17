@@ -1811,6 +1811,14 @@ export const PaymentRequestForm: React.FC<Props> = ({
                             </div>
                           )}
                         </div>
+
+                        {/* 遠期支票兌現條件驗證錯誤提示 */}
+                        {errors.chequeTerms && (
+                          <div className="text-xs text-rose-600 font-medium flex items-center gap-1.5 pt-1">
+                            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>{errors.chequeTerms}</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

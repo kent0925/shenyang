@@ -96,6 +96,28 @@ const MainApp: React.FC = () => {
           newErrors.vendorTaxId = '統一編號必須為合法的 8 碼數字';
         }
       }
+
+      // 遠期支票兌現條件驗證
+      if (paymentData.specialRequirements.postDatedCheck) {
+        const sr = paymentData.specialRequirements;
+        if (!sr.chequeTimingMode || !['immediate', 'days', 'date'].includes(sr.chequeTimingMode)) {
+          newErrors.chequeTerms = '請選擇遠期支票兌現條件（即期／天數／指定兌現日期）';
+        } else if (sr.chequeTimingMode === 'days') {
+          if (
+            sr.chequeDays === undefined ||
+            sr.chequeDays === null ||
+            isNaN(sr.chequeDays) ||
+            sr.chequeDays <= 0 ||
+            !Number.isInteger(sr.chequeDays)
+          ) {
+            newErrors.chequeTerms = '請輸入大於 0 之正整數天數';
+          }
+        } else if (sr.chequeTimingMode === 'date') {
+          if (!sr.postDatedDate || !sr.postDatedDate.trim()) {
+            newErrors.chequeTerms = '請選擇指定兌現日期';
+          }
+        }
+      }
     }
 
     setErrors(newErrors);

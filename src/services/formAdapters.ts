@@ -218,6 +218,12 @@ export function deserializePaymentRequest(record: FormRecord): PaymentRequestDat
           ...(raw.specialRequirements || {}),
         };
 
+        // 舊「其他付款方式」多選資料相容正規化：若兩者皆為 true，依一致原則保留 offsetBorrowing
+        if (mergedSr.wireTransfer && mergedSr.offsetBorrowing) {
+          mergedSr.offsetBorrowing = true;
+          mergedSr.wireTransfer = false;
+        }
+
         // 遠期支票兌現條件之舊資料平滑相容還原
         if (mergedSr.postDatedCheck) {
           if (!mergedSr.chequeTimingMode) {
