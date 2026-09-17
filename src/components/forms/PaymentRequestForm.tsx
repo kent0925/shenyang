@@ -337,7 +337,24 @@ export const PaymentRequestForm: React.FC<Props> = ({
     const brCode = primaryAcc?.branchCode || v.branchCode || '';
     const brName = primaryAcc?.branchName || v.branchName || '';
     const accNum = primaryAcc?.accountNumber || v.accountNumber || '';
-    const accName = primaryAcc?.accountName || v.accountName || v.vendorName;
+
+    const vName = (v.vendorName || '').trim();
+    const rawAccName = (primaryAcc?.accountName ?? v.accountName ?? '').trim();
+    let isSame = true;
+    let finalAccName = v.vendorName || '';
+
+    if (rawAccName) {
+      if (rawAccName === vName) {
+        isSame = true;
+        finalAccName = v.vendorName || '';
+      } else {
+        isSame = false;
+        finalAccName = (primaryAcc?.accountName ?? v.accountName ?? '').trim();
+      }
+    } else {
+      isSame = true;
+      finalAccName = v.vendorName || '';
+    }
 
     const updates: Partial<PaymentRequestData> = {
       vendorId: v.vendorId,
@@ -348,15 +365,15 @@ export const PaymentRequestForm: React.FC<Props> = ({
       branchCode: brCode,
       branchName: brName,
       accountNumber: accNum,
-      accountName: accName,
-      accountNameSameAsVendor: true,
+      accountName: finalAccName,
+      accountNameSameAsVendor: isSame,
       bankAccount: {
         type: 'code',
         bankCode: bCode,
         bankName: bName,
         branch: brName || brCode,
         accountNumber: accNum,
-        accountName: accName,
+        accountName: finalAccName,
       },
     };
 
@@ -404,7 +421,24 @@ export const PaymentRequestForm: React.FC<Props> = ({
     const brCode = acc.branchCode || '';
     const brName = acc.branchName || '';
     const accNum = acc.accountNumber || '';
-    const accName = acc.accountName || data.vendor;
+
+    const rawAccName = (acc.accountName || '').trim();
+    const vendorName = (data.vendor || '').trim();
+    let isSame = true;
+    let finalAccName = data.vendor || '';
+
+    if (rawAccName !== '') {
+      if (rawAccName === vendorName) {
+        isSame = true;
+        finalAccName = data.vendor || '';
+      } else {
+        isSame = false;
+        finalAccName = acc.accountName || '';
+      }
+    } else {
+      isSame = true;
+      finalAccName = data.vendor || '';
+    }
 
     onChange({
       ...data,
@@ -413,14 +447,15 @@ export const PaymentRequestForm: React.FC<Props> = ({
       branchCode: brCode,
       branchName: brName,
       accountNumber: accNum,
-      accountName: accName,
+      accountName: finalAccName,
+      accountNameSameAsVendor: isSame,
       bankAccount: {
         type: 'code',
         bankCode: bCode,
         bankName: bName,
         branch: brName || brCode,
         accountNumber: accNum,
-        accountName: accName,
+        accountName: finalAccName,
       },
     });
   };
@@ -434,13 +469,15 @@ export const PaymentRequestForm: React.FC<Props> = ({
       branchCode: '',
       branchName: '',
       accountNumber: '',
+      accountName: data.vendor,
+      accountNameSameAsVendor: true,
       bankAccount: {
         type: 'code',
         bankCode: '',
         bankName: '',
         branch: '',
         accountNumber: '',
-        accountName: data.accountName || data.vendor,
+        accountName: data.vendor,
       },
     });
   };
@@ -548,8 +585,8 @@ export const PaymentRequestForm: React.FC<Props> = ({
     }
   };
 
-  const handleAccountSameToggle = (checked: boolean) => {
-    if (checked) {
+  const handleAccountSourceSelect = (sameAsVendor: boolean) => {
+    if (sameAsVendor) {
       onChange({
         ...data,
         accountNameSameAsVendor: true,
@@ -560,9 +597,15 @@ export const PaymentRequestForm: React.FC<Props> = ({
         },
       });
     } else {
+      const customName = data.accountName || data.bankAccount?.accountName || data.vendor || '';
       onChange({
         ...data,
         accountNameSameAsVendor: false,
+        accountName: customName,
+        bankAccount: {
+          ...data.bankAccount,
+          accountName: customName,
+        },
       });
     }
   };
@@ -1501,20 +1544,33 @@ export const PaymentRequestForm: React.FC<Props> = ({
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-semibold text-slate-600">戶名</label>
-                <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={data.accountNameSameAsVendor !== false}
-                    onChange={(e) => handleAccountSameToggle(e.target.checked)}
-                    className="rounded text-blue-600 focus:ring-blue-500"
-                  />
-                  <span>同受款人／廠商名稱</span>
-                </label>
+                <div className="flex items-center gap-3 text-xs text-slate-700 select-none">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="accountNameSource"
+                      checked={data.accountNameSameAsVendor !== false}
+                      onChange={() => handleAccountSourceSelect(true)}
+                      className="text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>同受款人／廠商名稱</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="accountNameSource"
+                      checked={data.accountNameSameAsVendor === false}
+                      onChange={() => handleAccountSourceSelect(false)}
+                      className="text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>自訂戶名</span>
+                  </label>
+                </div>
               </div>
               <input
                 type="text"
                 readOnly={data.accountNameSameAsVendor !== false}
-                placeholder="戶名"
+                placeholder={data.accountNameSameAsVendor !== false ? '同受款人／廠商名稱' : '請輸入自訂戶名'}
                 value={
                   data.accountNameSameAsVendor !== false
                     ? data.vendor

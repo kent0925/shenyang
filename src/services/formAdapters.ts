@@ -193,6 +193,26 @@ export function deserializePaymentRequest(record: FormRecord): PaymentRequestDat
         ? 'budgeted'
         : 'unbudgeted';
 
+    const resolvedVendor = raw.vendor || record.vendorName || '';
+    const rawAccountName = raw.accountName || raw.bankAccount?.accountName || '';
+
+    // 戶名與受款人／廠商連動判定（含歷史表單相容還原）
+    let resolvedAccountNameSameAsVendor: boolean;
+    if (typeof raw.accountNameSameAsVendor === 'boolean') {
+      resolvedAccountNameSameAsVendor = raw.accountNameSameAsVendor;
+    } else {
+      // 舊資料沒有 accountNameSameAsVendor 時之相容判斷
+      if (rawAccountName && rawAccountName.trim() !== '' && rawAccountName.trim() !== resolvedVendor.trim()) {
+        resolvedAccountNameSameAsVendor = false;
+      } else {
+        resolvedAccountNameSameAsVendor = true;
+      }
+    }
+
+    const resolvedAccountName = resolvedAccountNameSameAsVendor
+      ? resolvedVendor
+      : rawAccountName;
+
     // 與 INITIAL_PAYMENT_REQUEST_DATA 進行深層合併保護
     return {
       ...INITIAL_PAYMENT_REQUEST_DATA,
@@ -203,14 +223,17 @@ export function deserializePaymentRequest(record: FormRecord): PaymentRequestDat
       subProjectId: raw.subProjectId || record.subProjectId || '',
       subProjectName: raw.subProjectName || record.subProjectName || '',
       vendorId: raw.vendorId || record.vendorId || '',
-      vendor: raw.vendor || record.vendorName || '',
+      vendor: resolvedVendor,
       vendorTaxId: raw.vendorTaxId || record.vendorTaxId || '',
+      accountName: resolvedAccountName,
+      accountNameSameAsVendor: resolvedAccountNameSameAsVendor,
       budgetType: resolvedBudgetType,
       budgetItemId: resolvedBudgetItemId,
       budgetItemName: raw.budgetItemName || '',
       bankAccount: {
         ...INITIAL_PAYMENT_REQUEST_DATA.bankAccount,
         ...(raw.bankAccount || {}),
+        accountName: resolvedAccountName,
       },
       specialRequirements: (() => {
         const mergedSr = {
