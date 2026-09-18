@@ -151,6 +151,38 @@ function doPost(e) {
         resultData = handleListArchivedFormVersions(payload);
         break;
 
+      case 'beginFormAttachmentUpload':
+        resultData = handleBeginFormAttachmentUpload(payload);
+        break;
+
+      case 'uploadFormAttachmentChunk':
+        resultData = handleUploadFormAttachmentChunk(payload);
+        break;
+
+      case 'finalizeFormAttachmentFile':
+        resultData = handleFinalizeFormAttachmentFile(payload);
+        break;
+
+      case 'finalizeFormAttachment':
+        resultData = handleFinalizeFormAttachment(payload);
+        break;
+
+      case 'listFormAttachments':
+        resultData = handleListFormAttachments(payload);
+        break;
+
+      case 'cancelFormAttachmentUpload':
+        resultData = handleCancelFormAttachmentUpload(payload);
+        break;
+
+      case 'getFormAttachmentFileInfo':
+        resultData = handleGetFormAttachmentFileInfo(payload);
+        break;
+
+      case 'getFormAttachmentFileChunk':
+        resultData = handleGetFormAttachmentFileChunk(payload);
+        break;
+
       default:
         return createErrorResponse('UNKNOWN_ACTION', '未知的請求動作: ' + action);
     }

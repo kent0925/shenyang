@@ -192,6 +192,16 @@ export default async function handler(
     });
   }
 
+  // Attachment chunks remain below the serverless request/response limit after base64.
+  // All other attachment requests contain metadata only, never a full binary.
+  if (/^(beginFormAttachmentUpload|uploadFormAttachmentChunk|finalizeFormAttachmentFile|finalizeFormAttachment|cancelFormAttachmentUpload|listFormAttachments|getFormAttachmentFileInfo|getFormAttachmentFileChunk)$/.test(action)) {
+    const size = Buffer.byteLength(JSON.stringify(payload), 'utf8');
+    const limit = action === 'uploadFormAttachmentChunk' ? Math.ceil(2 * 1024 * 1024 / 3) * 4 + 4096 : 64 * 1024;
+    if (size > limit) {
+      return res.status(413).json({ ok: false, error: { code: 'VALIDATION_ERROR', message: '附件請求過大，請使用分塊上傳。' } });
+    }
+  }
+
   // ----------------------------------------------------
   // 7. 轉發至 GAS Web App
   // ----------------------------------------------------
