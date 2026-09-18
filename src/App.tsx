@@ -4,6 +4,9 @@ import { TabNav, FormTab } from './components/layout/TabNav';
 import { SealApprovalForm } from './components/forms/SealApprovalForm';
 import { PaymentRequestForm } from './components/forms/PaymentRequestForm';
 import { FormRecordsPanel } from './components/forms/FormRecordsPanel';
+import { AttachmentSection } from './components/forms/AttachmentSection';
+import { useFormAttachments } from './services/useFormAttachments';
+import { ATTACHMENT_PARTIAL_FAILURE } from './services/formAttachments';
 import { MasterDataPanel } from './components/master-data/MasterDataPanel';
 import { PreviewModal } from './components/preview/PreviewModal';
 import { SealApprovalView } from './components/preview/SealApprovalView';
@@ -48,6 +51,7 @@ const MainApp: React.FC = () => {
   const [currentPaymentFormId, setCurrentPaymentFormId] = useState<string | null>(null);
   const [currentPaymentVersion, setCurrentPaymentVersion] = useState<number | null>(null);
   const [pendingArchive, setPendingArchive] = useState<PendingArchiveInfo | null>(null);
+  const attachments = useFormAttachments();
   const [isPaymentOverBudget, setIsPaymentOverBudget] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -229,6 +233,11 @@ const MainApp: React.FC = () => {
 
   // 官方主要正式動作：完成並產生表單（儲存最新 Form -> 產出雙檔 -> 同時歸檔 Google Drive -> 回寫 IDs -> 本機下載雙檔）
   const handleCompleteAndGenerate = async () => {
+    if (isProcessing) return;
+    if ((activeTab === 'seal' || activeTab === 'payment') && attachments.pendingAttachmentRetry[activeTab]) {
+      alert('請先使用「重試附件」完成附件上傳；附件重試不會增加表單版本。');
+      return;
+    }
     if (!validateForm('write')) return;
     setIsProcessing(true);
 
@@ -363,7 +372,21 @@ const MainApp: React.FC = () => {
       downloadBlob(excelBlob, excelFileName);
       downloadBlob(pdfBlob, pdfFileName);
 
-      // 8. 正式完成訊息
+      // 8. Formal archive/download are complete; attachment retry is independent.
+      setStatusMessage('正式文件已儲存，正在上傳附件…');
+      try {
+        const attachmentSuccess = await attachments.upload(currentFormType, targetFormId, targetVersion);
+        if (!attachmentSuccess) {
+          setStatusMessage(ATTACHMENT_PARTIAL_FAILURE);
+          return;
+        }
+      } catch {
+        // Even unexpected attachment errors must not be reported as a formal archive failure.
+        setStatusMessage(ATTACHMENT_PARTIAL_FAILURE);
+        return;
+      }
+
+      // 9. 正式完成訊息
       setStatusMessage('表單已完成：Excel / PDF 已下載並同步歸檔至雲端');
       setTimeout(() => setStatusMessage(null), 5000);
     } catch (archiveErr: any) {
@@ -435,6 +458,7 @@ const MainApp: React.FC = () => {
   const handleResetForm = () => {
     if (activeTab === 'seal') {
       if (confirm('確定要建立全新用印／簽呈表單嗎？未儲存的變更將會遺失。')) {
+        attachments.clear('seal');
         setSealData(INITIAL_SEAL_APPROVAL_DATA);
         setCurrentSealFormId(null);
         setCurrentSealVersion(null);
@@ -445,6 +469,7 @@ const MainApp: React.FC = () => {
       }
     } else if (activeTab === 'payment') {
       if (confirm('確定要建立全新請款單表單嗎？未儲存的變更將會遺失。')) {
+        attachments.clear('payment');
         setPaymentData(INITIAL_PAYMENT_REQUEST_DATA);
         setCurrentPaymentFormId(null);
         setCurrentPaymentVersion(null);
@@ -458,8 +483,11 @@ const MainApp: React.FC = () => {
 
   // 從紀錄開啟用印／簽呈表單
   const handleOpenSealForm = (record: FormRecord) => {
+    if (isProcessing) return;
+    if (attachments.pending.seal.length && !confirm('載入表單會清除目前待存檔或失敗附件，確定繼續？')) return;
     try {
       const hydrated = deserializeSealApproval(record);
+      attachments.clear('seal');
       setSealData(hydrated);
       setCurrentSealFormId(record.formId);
       setCurrentSealVersion(typeof record.version === 'number' ? record.version : Number(record.version) || 1);
@@ -475,8 +503,11 @@ const MainApp: React.FC = () => {
 
   // 從紀錄開啟請款單表單
   const handleOpenPaymentForm = (record: FormRecord) => {
+    if (isProcessing) return;
+    if (attachments.pending.payment.length && !confirm('載入表單會清除目前待存檔或失敗附件，確定繼續？')) return;
     try {
       const hydrated = deserializePaymentRequest(record);
+      attachments.clear('payment');
       setPaymentData(hydrated);
       setCurrentPaymentFormId(record.formId);
       setCurrentPaymentVersion(typeof record.version === 'number' ? record.version : Number(record.version) || 1);
@@ -502,6 +533,7 @@ const MainApp: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200">
           {/* 表單／主檔頁籤切換 */}
           <TabNav activeTab={activeTab} onChange={(tab) => {
+            if (isProcessing) return;
             setActiveTab(tab);
             setErrors({});
           }} />
@@ -547,6 +579,24 @@ const MainApp: React.FC = () => {
             {activeTab === 'master' && (
               <MasterDataPanel />
             )}
+            {(activeTab === 'seal' || activeTab === 'payment') && <AttachmentSection
+              key={`${activeTab}-${activeTab === 'seal' ? currentSealFormId : currentPaymentFormId}`}
+              formId={activeTab === 'seal' ? currentSealFormId : currentPaymentFormId}
+              version={activeTab === 'seal' ? currentSealVersion : currentPaymentVersion}
+              projectName={activeTab === 'payment' ? paymentData.project : ''}
+              date={activeTab === 'payment' ? paymentData.applyDate : sealData.applyDate}
+              pending={attachments.pending[activeTab]} onChange={items => attachments.change(activeTab, items)}
+              retry={attachments.pendingAttachmentRetry[activeTab]} busy={isProcessing} refresh={attachments.refresh}
+              onRetry={async () => {
+                const retry = attachments.pendingAttachmentRetry[activeTab];
+                if (!retry || isProcessing) return;
+                setIsProcessing(true);
+                try {
+                  const success = await attachments.upload(activeTab, retry.formId, retry.version);
+                  setStatusMessage(success ? '附件已成功歸檔。' : ATTACHMENT_PARTIAL_FAILURE);
+                } finally { setIsProcessing(false); }
+              }}
+            />}
           </div>
         </div>
       </main>

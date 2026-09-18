@@ -13,6 +13,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { backendStorageService } from '../../services/backendStorage';
+import { ArchivedAttachments } from './AttachmentSection';
 import { BackendApiError } from '../../services/backendClient';
 import type { FormRecord, FormType, ArchivedVersionItem } from '../../models/backend';
 import { base64ToBlob, downloadBlob, printBlobPdf } from '../../utils/fileBlob';
@@ -997,6 +998,10 @@ export const FormRecordsPanel: React.FC<Props> = ({
                           <div className="text-xs text-slate-500 font-mono">
                             封存時間：{ver.archivedAt || '—'}
                           </div>
+                          <details className="text-sm pt-2">
+                            <summary className="cursor-pointer text-blue-700">附件（v{ver.version}）</summary>
+                            <ArchivedAttachments formId={versionModalRecord.formId} version={ver.version} />
+                          </details>
                         </div>
 
                         <div className="flex items-center gap-1.5 flex-wrap">
