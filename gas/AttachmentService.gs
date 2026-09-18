@@ -133,7 +133,7 @@ function attMutation(p, fn) {
   } catch (err) {
     if (err.code === 'VERSION_CONFLICT' && root) {
       var pending = findChildFolderByName(root, '.pending-' + p.attachmentId);
-      if (pending) pending.setTrashed(true);
+      if (pending) attCancelPending(pending);
     }
     throw err;
   } finally {
@@ -182,49 +182,132 @@ function handleBeginFormAttachmentUpload(p) {
   });
 }
 
+function attFetch(url, options) {
+  options = options || {};
+  options.headers = options.headers || {};
+  options.headers.Authorization = 'Bearer ' + ScriptApp.getOAuthToken();
+  options.muteHttpExceptions = true;
+  options.followRedirects = false;
+  return UrlFetchApp.fetch(url, options);
+}
+function attHeader(response, name) {
+  var headers = response.getAllHeaders();
+  var key = Object.keys(headers).filter(function (k) { return k.toLowerCase() === name.toLowerCase(); })[0];
+  return key ? String(headers[key]) : '';
+}
+function attSessionState(folder, key, state) {
+  var file = attFile(folder, '.session-' + key + '.json');
+  if (state) {
+    if (file) file.setContent(JSON.stringify(state));
+    else attJson(folder, '.session-' + key + '.json', state);
+    return state;
+  }
+  return file ? JSON.parse(file.getBlob().getDataAsString('UTF-8')) : null;
+}
+function attSession(pending, d) {
+  var state = attSessionState(pending.folder, d.key);
+  if (state) return state;
+  if (d.key !== 'primary') getOrCreateChildFolder(pending.folder, 'photos');
+  var target = attFileTarget(pending.folder, pending.intent, d);
+  // Persist a stable server-generated Drive ID before session initiation. Restart
+  // with the same ID after a lost initiation response never creates another file.
+  var idResponse = attFetch('https://www.googleapis.com/drive/v3/files/generateIds?count=1&space=drive', { method: 'get' });
+  attAssert(idResponse.getResponseCode() === 200, '無法建立附件上傳');
+  state = { fileId: JSON.parse(idResponse.getContentText()).ids[0], url: null };
+  attSessionState(pending.folder, d.key, state);
+  return state;
+}
+function attStartSession(pending, d, state) {
+  var target = attFileTarget(pending.folder, pending.intent, d);
+  var response = attFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,size', {
+    method: 'post', contentType: 'application/json',
+    headers: { 'X-Upload-Content-Type': d.mimeType, 'X-Upload-Content-Length': String(d.size) },
+    payload: JSON.stringify({ id: state.fileId, name: target.name, mimeType: d.mimeType, parents: [target.folder.getId()] })
+  });
+  if (response.getResponseCode() !== 200) throw createApiError('UPLOAD_FAILED', '附件上傳連線失敗，請重試。');
+  var url = attHeader(response, 'Location');
+  attAssert(url.indexOf('https://www.googleapis.com/') === 0, '附件上傳連線不正確');
+  state.url = url; attSessionState(pending.folder, d.key, state);
+}
+function attCompleted(state, d) {
+  var response = attFetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(state.fileId) + '?fields=id,size,trashed', { method: 'get' });
+  if (response.getResponseCode() === 404) return false;
+  if (response.getResponseCode() !== 200) throw createApiError('UPLOAD_FAILED', '無法確認附件上傳，請重試。');
+  var info = JSON.parse(response.getContentText());
+  if (info.size === undefined || Number(info.size) === 0) return false;
+  attAssert(!info.trashed && Number(info.size) === d.size, '附件上傳大小不符');
+  return true;
+}
+function attStatus(pending, d, state) {
+  if (attCompleted(state, d)) return d.size;
+  if (!state.url) { attStartSession(pending, d, state); return 0; }
+  var response = attFetch(state.url, { method: 'put', headers: { 'Content-Range': 'bytes */' + d.size }, payload: '' });
+  var code = response.getResponseCode();
+  if (code === 200 || code === 201) {
+    attAssert(Number(JSON.parse(response.getContentText()).size) === d.size, '附件上傳大小不符');
+    return d.size;
+  }
+  if (code === 404 || code === 410) {
+    state.url = null; attSessionState(pending.folder, d.key, state);
+    attStartSession(pending, d, state); return 0;
+  }
+  if (code !== 308) throw createApiError('UPLOAD_FAILED', '附件上傳狀態異常，請重試。');
+  var range = attHeader(response, 'Range');
+  if (!range) return 0;
+  attAssert(/^bytes=0-\d+$/.test(range), '附件上傳位置異常');
+  var offset = Number(range.split('-')[1]) + 1;
+  attAssert(offset <= d.size); return offset;
+}
 function handleUploadFormAttachmentChunk(p) {
   attAssert(typeof p.base64 === 'string' && p.base64.length <= Math.ceil(ATT_CHUNK_SIZE / 3) * 4 &&
     p.base64.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(p.base64), '附件分塊過大或格式錯誤');
   var bytes = Utilities.base64Decode(p.base64);
+  attAssert(typeof p.chunkSha256 === 'string' && /^[a-f0-9]{64}$/.test(p.chunkSha256) && attHash(bytes) === p.chunkSha256, '附件分塊完整性驗證失敗');
   return attMutation(p, function (_, root) {
     if (attPublished(root, p)) return { published: true };
     var pending = attPending(root, p), d = attDescriptor(pending.intent, p.fileKey);
-    var count = Math.ceil(d.size / ATT_CHUNK_SIZE);
-    attAssert(Number.isInteger(p.index) && p.index >= 0 && p.index < count);
-    attAssert(bytes.length === Math.min(ATT_CHUNK_SIZE, d.size - p.index * ATT_CHUNK_SIZE), '附件分塊長度不正確');
-    var target = attFileTarget(pending.folder, pending.intent, d);
-    if (target.folder && attFile(target.folder, target.name)) return { complete: true };
-    var chunks = getOrCreateChildFolder(pending.folder, '.chunks');
-    var name = d.key + '-' + p.index;
-    var existing = attFile(chunks, name);
-    if (existing) attAssert(attHash(existing.getBlob().getBytes()) === attHash(bytes), '重試分塊內容不同');
-    else chunks.createFile(Utilities.newBlob(bytes, 'application/octet-stream', name));
+    attAssert(Number.isInteger(p.index) && p.index >= 0 && p.index < Math.ceil(d.size / ATT_CHUNK_SIZE));
+    var start = p.index * ATT_CHUNK_SIZE, end = start + bytes.length;
+    attAssert(bytes.length === Math.min(ATT_CHUNK_SIZE, d.size - start), '附件分塊長度不正確');
+    if (p.index === 0) attValidateBinary(bytes, d.mimeType);
+    // Write-once chunk digest prevents changed-content retries, without storing binary.
+    var digestName = '.digest-' + d.key + '-' + p.index + '.json';
+    if (attFile(pending.folder, digestName)) attAssert(attRead(pending.folder, digestName).sha256 === p.chunkSha256, '重試分塊內容不同');
+    else attJson(pending.folder, digestName, { sha256: p.chunkSha256 });
+    var state = attSession(pending, d), offset = attStatus(pending, d, state);
+    if (offset >= end) return { index: p.index, acceptedOffset: offset };
+    if (offset < start) throw createApiError('UPLOAD_RESTART_REQUIRED', '附件上傳尚缺較早分塊，請重新重試附件。');
+    var response = attFetch(state.url, { method: 'put', contentType: d.mimeType,
+      headers: { 'Content-Range': 'bytes ' + offset + '-' + (end - 1) + '/' + d.size },
+      payload: Utilities.newBlob(bytes.slice(offset - start), d.mimeType) });
+    var code = response.getResponseCode();
+    if (code === 200 || code === 201) attAssert(Number(JSON.parse(response.getContentText()).size) === d.size, '附件上傳大小不符');
+    else if (code !== 308) throw createApiError('UPLOAD_FAILED', '附件分塊上傳失敗，請重試。');
     return { index: p.index };
   });
 }
-
 function handleFinalizeFormAttachmentFile(p) {
   return attMutation(p, function (_, root) {
     if (attPublished(root, p)) return { published: true };
     var pending = attPending(root, p), d = attDescriptor(pending.intent, p.fileKey);
-    if (d.key !== 'primary') getOrCreateChildFolder(pending.folder, 'photos');
+    var state = attSessionState(pending.folder, d.key);
+    attAssert(state && attCompleted(state, d), '附件檔案尚未完成');
     var target = attFileTarget(pending.folder, pending.intent, d);
-    if (attFile(target.folder, target.name)) return { complete: true };
-    var chunks = findChildFolderByName(pending.folder, '.chunks');
-    if (!chunks) throw createApiError('NOT_FOUND', '附件分塊未完成');
-    var bytes = [];
-    for (var index = 0; index < Math.ceil(d.size / ATT_CHUNK_SIZE); index++) {
-      var chunk = attFile(chunks, d.key + '-' + index);
-      if (!chunk) throw createApiError('NOT_FOUND', '附件分塊未完成');
-      var part = chunk.getBlob().getBytes();
-      attAssert(part.length === Math.min(ATT_CHUNK_SIZE, d.size - index * ATT_CHUNK_SIZE));
-      bytes = bytes.concat(part);
-    }
-    attAssert(bytes.length === d.size && attHash(bytes) === d.sha256, '附件完整性驗證失敗');
-    attValidateBinary(bytes, d.mimeType);
-    target.folder.createFile(Utilities.newBlob(bytes, d.mimeType, target.name));
+    var file = target.folder && attFile(target.folder, target.name);
+    attAssert(file && file.getId() === state.fileId && file.getSize() === d.size, '附件檔案尚未完成');
     return { complete: true };
   });
+}
+function attCancelPending(folder) {
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var file = files.next();
+    if (!/^\.session-/.test(file.getName())) continue;
+    var state = JSON.parse(file.getBlob().getDataAsString('UTF-8'));
+    if (state.url) try { attFetch(state.url, { method: 'delete' }); } catch (e) {}
+    if (state.fileId) try { DriveApp.getFileById(state.fileId).setTrashed(true); } catch (e) {}
+  }
+  folder.setTrashed(true);
 }
 
 function handleFinalizeFormAttachment(p) {
@@ -249,7 +332,10 @@ function handleFinalizeFormAttachment(p) {
       pending.folder.setName(p.attachmentId); // sole publish point after authoritative CAS
       return attRead(pending.folder, 'manifest.json');
     });
-    try { attFile(pending.folder, 'upload.json').setTrashed(true); } catch (cleanupError) { /* published manifest remains authoritative */ }
+    try {
+      var files = pending.folder.getFiles();
+      while (files.hasNext()) { var f = files.next(); if (/^\.(session|digest)-/.test(f.getName()) || f.getName() === 'upload.json') f.setTrashed(true); }
+    } catch (cleanupError) { /* published manifest remains authoritative */ }
     return result;
   });
 }

@@ -98,7 +98,8 @@ export async function buildConstructionAttachment(fields: Omit<ConstructionMetad
     y = wrap(`施工日期：${fields.constructionDate}`, margin, y + 6, W - margin * 2);
     if (page === 0) {
       y = wrap(`施工地點：${fields.location.replace(/\s+/g, ' ')}`, margin, y + 6, W - margin * 2);
-      y = wrap(`工作說明：${fields.workDescription.replace(/\s+/g, ' ')}`, margin, y + 6, W - margin * 2);
+      y = wrap(`工作說明：${fields.workDescription.replace(/\r\n?/g, '\n')}`, margin, y + 6, W - margin * 2);
+      if (y > 620) throw new Error('工作說明換行過多，請精簡後再預覽。');
     }
     const top = Math.max(page === 0 ? 450 : 250, y + 20);
     const cellW = (W - 2 * margin - gap) / 2;

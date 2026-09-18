@@ -235,7 +235,7 @@ const MainApp: React.FC = () => {
   const handleCompleteAndGenerate = async () => {
     if (isProcessing) return;
     if ((activeTab === 'seal' || activeTab === 'payment') && attachments.pendingAttachmentRetry[activeTab]) {
-      alert('請先使用「重試附件」完成附件上傳；附件重試不會增加表單版本。');
+      alert('尚有附件上傳失敗，請先重試或移除失敗附件。');
       return;
     }
     if (!validateForm('write')) return;
@@ -586,13 +586,14 @@ const MainApp: React.FC = () => {
               projectName={activeTab === 'payment' ? paymentData.project : ''}
               date={activeTab === 'payment' ? paymentData.applyDate : sealData.applyDate}
               pending={attachments.pending[activeTab]} onChange={items => attachments.change(activeTab, items)}
+              onDiscardFailed={id => attachments.discardFailedAttachment(activeTab, id)}
               retry={attachments.pendingAttachmentRetry[activeTab]} busy={isProcessing} refresh={attachments.refresh}
               onRetry={async () => {
                 const retry = attachments.pendingAttachmentRetry[activeTab];
                 if (!retry || isProcessing) return;
                 setIsProcessing(true);
                 try {
-                  const success = await attachments.upload(activeTab, retry.formId, retry.version);
+                  const success = await attachments.retryFailed(activeTab);
                   setStatusMessage(success ? '附件已成功歸檔。' : ATTACHMENT_PARTIAL_FAILURE);
                 } finally { setIsProcessing(false); }
               }}

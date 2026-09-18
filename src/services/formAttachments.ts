@@ -34,7 +34,7 @@ export async function uploadAttachment(formId: string, version: number, attachme
     for (let offset = 0, index = 0; offset < file.blob.size; offset += ATTACHMENT_CHUNK_SIZE, index++) {
       const chunk = file.blob.slice(offset, offset + ATTACHMENT_CHUNK_SIZE);
       await backendClient.request('uploadFormAttachmentChunk', {
-        ...identity, fileKey: file.key, index, base64: await blobToBase64(chunk),
+        ...identity, fileKey: file.key, index, base64: await blobToBase64(chunk), chunkSha256: await sha256(chunk),
       });
     }
     await backendClient.request('finalizeFormAttachmentFile', { ...identity, fileKey: file.key });

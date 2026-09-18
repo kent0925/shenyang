@@ -8,11 +8,28 @@ export function useFormAttachments() {
   const [pendingAttachmentRetry, setRetry] = useState<Record<FormKind, PendingAttachmentRetry | null>>({ seal: null, payment: null });
   const [refresh, setRefresh] = useState(0);
   const change = (kind: FormKind, attachments: PendingAttachment[]) => setPending(previous => ({ ...previous, [kind]: attachments }));
+  const discardFailedAttachment = (kind: FormKind, attachmentId: string) => {
+    if (!pending[kind].some(a => a.attachmentId === attachmentId && a.status === 'failed')) return;
+    setPending(previous => ({ ...previous, [kind]: previous[kind].filter(a => a.attachmentId !== attachmentId) }));
+    setRetry(previous => {
+      const retry = previous[kind];
+      if (!retry) return previous;
+      const attachments = retry.attachments.filter(a => a.attachmentId !== attachmentId);
+      return { ...previous, [kind]: attachments.length ? { ...retry, attachments } : null };
+    });
+  };
   const clear = (kind: FormKind) => {
     change(kind, []); setRetry(previous => ({ ...previous, [kind]: null })); setRefresh(n => n + 1);
   };
   const upload = async (kind: FormKind, formId: string, version: number) => {
-    const retry = pendingAttachmentRetry[kind] || { formId, version, attachments: pending[kind] };
+    if (pendingAttachmentRetry[kind]) throw new Error('尚有附件上傳失敗，請先重試或移除失敗附件。');
+    return performUpload(kind, { formId, version, attachments: pending[kind] });
+  };
+  const retryFailed = async (kind: FormKind) => {
+    const retry = pendingAttachmentRetry[kind];
+    return retry ? performUpload(kind, retry) : true;
+  };
+  const performUpload = async (kind: FormKind, retry: PendingAttachmentRetry) => {
     if (!retry.attachments.length) return true;
     setRetry(previous => ({ ...previous, [kind]: retry }));
     const uploadingIds = new Set(retry.attachments.map(a => a.attachmentId));
@@ -23,5 +40,5 @@ export function useFormAttachments() {
     setRefresh(n => n + 1);
     return failed.length === 0;
   };
-  return { pending, pendingAttachmentRetry, refresh, change, clear, upload };
+  return { pending, pendingAttachmentRetry, refresh, change, clear, upload, retryFailed, discardFailedAttachment };
 }

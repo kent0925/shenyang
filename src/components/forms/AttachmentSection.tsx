@@ -32,16 +32,17 @@ export function ArchivedAttachments({ formId, version, refresh = 0 }: { formId: 
   </div>;
 }
 
-export function AttachmentSection({ formId, version, projectName, date, pending, onChange, retry, onRetry, busy, refresh }: {
+export function AttachmentSection({ formId, version, projectName, date, pending, onChange, onDiscardFailed, retry, onRetry, busy, refresh }: {
   formId: string | null; version: number | null; projectName: string; date: string;
   pending: PendingAttachment[]; onChange: (items: PendingAttachment[]) => void;
+  onDiscardFailed: (attachmentId: string) => void;
   retry: PendingAttachmentRetry | null; onRetry: () => void; busy: boolean; refresh: number;
 }) {
   const [builder, setBuilder] = useState(false);
   const [error, setError] = useState('');
   return <section aria-label="附件" className="mt-8 border-t pt-6 space-y-3">
     <h2 className="font-bold text-slate-800">附件</h2>
-    <fieldset disabled={busy || builder} className="flex flex-wrap gap-3">
+    <fieldset disabled={busy || builder || !!retry?.attachments.length} className="flex flex-wrap gap-3">
       <label className="border rounded-lg px-3 py-2 text-sm cursor-pointer">＋ 一般附件
         <input aria-label="一般附件" type="file" className="block text-xs mt-1 max-w-full" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.xlsm" onChange={e => {
           const files = Array.from(e.target.files || []); e.target.value = ''; setError('');
@@ -56,7 +57,7 @@ export function AttachmentSection({ formId, version, projectName, date, pending,
       <div className="min-w-0"><p className="font-medium break-all">{item.displayName}</p>
         <p className="text-slate-500">{item.type === 'construction' ? `施工照片紀錄 · ${item.metadata?.photoCount} 張照片` : '一般附件'} · {(item.files.reduce((sum, f) => sum + f.blob.size, 0) / 1024 / 1024).toFixed(2)} MB · {item.status === 'pending' ? '待存檔' : item.status === 'uploading' ? '上傳中' : '上傳失敗'}</p>
         {item.error && <p role="alert" className="text-red-700">{item.error}</p>}</div>
-      <button type="button" className="underline shrink-0 disabled:opacity-50" disabled={busy || item.status !== 'pending'} onClick={() => onChange(pending.filter(a => a.attachmentId !== item.attachmentId))}>移除</button>
+      <button type="button" className="underline shrink-0 disabled:opacity-50" disabled={busy || item.status === 'uploading'} onClick={() => item.status === 'failed' ? onDiscardFailed(item.attachmentId) : onChange(pending.filter(a => a.attachmentId !== item.attachmentId))}>移除</button>
     </div>)}
     {retry && retry.attachments.length > 0 && <div className="rounded-lg bg-amber-50 p-3 text-sm space-y-2">
       <p role="status">{ATTACHMENT_PARTIAL_FAILURE}</p>
