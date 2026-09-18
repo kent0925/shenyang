@@ -171,6 +171,10 @@ function doPost(e) {
         resultData = handleListFormAttachments(payload);
         break;
 
+      case 'cancelFormAttachmentUpload':
+        resultData = handleCancelFormAttachmentUpload(payload);
+        break;
+
       case 'getFormAttachmentFileInfo':
         resultData = handleGetFormAttachmentFileInfo(payload);
         break;

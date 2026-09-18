@@ -115,7 +115,7 @@ function attValidateIntent(p) {
     addedVersion: p.expectedVersion, files: files, metadata: metadata };
 }
 
-function attMutation(p, fn) {
+function attMutation(p, fn, allowVersionMismatch) {
   var record = attIdentity(p, true);
   var key = 'ATT_LEASE_' + p.formId + '_' + p.attachmentId;
   var token = Utilities.getUuid();
@@ -128,7 +128,7 @@ function attMutation(p, fn) {
   var root;
   try {
     root = attRoot(record, false);
-    attVersion(handleGetForm({ formId: p.formId }), p);
+    if (!allowVersionMismatch) attVersion(handleGetForm({ formId: p.formId }), p);
     return fn(record, root);
   } catch (err) {
     if (err.code === 'VERSION_CONFLICT' && root) {
@@ -305,9 +305,27 @@ function attCancelPending(folder) {
     if (!/^\.session-/.test(file.getName())) continue;
     var state = JSON.parse(file.getBlob().getDataAsString('UTF-8'));
     if (state.url) try { attFetch(state.url, { method: 'delete' }); } catch (e) {}
-    if (state.fileId) try { DriveApp.getFileById(state.fileId).setTrashed(true); } catch (e) {}
+    if (state.fileId) {
+      var response = attFetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(state.fileId), {
+        method: 'patch', contentType: 'application/json', payload: JSON.stringify({ trashed: true })
+      });
+      // Unfinished sessions may not have created a file yet. Other failures must
+      // leave the package retryable instead of pretending cleanup succeeded.
+      if (response.getResponseCode() !== 200 && response.getResponseCode() !== 404) {
+        throw createApiError('UPLOAD_CANCEL_FAILED', '附件暫存清理失敗，請再試一次。');
+      }
+    }
   }
   folder.setTrashed(true);
+}
+function handleCancelFormAttachmentUpload(p) {
+  // Same package lease as chunk/finalize; no HTTP or trash under ScriptLock.
+  // Cancellation is safe even when the Form has advanced: only .pending is resolved.
+  return attMutation(p, function (_, root) {
+    var folder = root && findChildFolderByName(root, '.pending-' + p.attachmentId);
+    if (folder) attCancelPending(folder);
+    return { cancelled: true };
+  }, true);
 }
 
 function handleFinalizeFormAttachment(p) {
@@ -374,7 +392,20 @@ function handleGetFormAttachmentFileInfo(p) {
 function handleGetFormAttachmentFileChunk(p) {
   var d = attDownload(p);
   attAssert(Number.isInteger(p.index) && p.index >= 0 && p.index < Math.ceil(d.info.size / ATT_CHUNK_SIZE));
-  // DriveApp has no byte-range read; bound stored files, return only one chunk.
-  var bytes = d.file.getBlob().getBytes().slice(p.index * ATT_CHUNK_SIZE, (p.index + 1) * ATT_CHUNK_SIZE);
+  var start = p.index * ATT_CHUNK_SIZE;
+  var end = Math.min(start + ATT_CHUNK_SIZE, d.info.size) - 1;
+  var response = attFetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(d.file.getId()) + '?alt=media', {
+    method: 'get', headers: { Range: 'bytes=' + start + '-' + end }
+  });
+  var code = response.getResponseCode();
+  // Reject a server ignoring Range before asking UrlFetch for its response bytes.
+  if (code !== 206 && !(code === 200 && start === 0 && end + 1 === d.info.size && d.info.size <= ATT_CHUNK_SIZE)) {
+    throw createApiError('DOWNLOAD_FAILED', '附件分塊下載失敗，請重試。');
+  }
+  if (code === 206) attAssert(attHeader(response, 'Content-Range') === 'bytes ' + start + '-' + end + '/' + d.info.size, '附件下載範圍不正確');
+  var length = attHeader(response, 'Content-Length');
+  if (length) attAssert(Number(length) === end - start + 1 && Number(length) <= ATT_CHUNK_SIZE, '附件分塊長度不正確');
+  var bytes = response.getBlob().getBytes();
+  attAssert(bytes.length === end - start + 1 && bytes.length <= ATT_CHUNK_SIZE, '附件分塊長度不正確');
   return { index: p.index, base64: Utilities.base64Encode(bytes) };
 }

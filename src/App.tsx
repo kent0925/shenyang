@@ -456,6 +456,10 @@ const MainApp: React.FC = () => {
 
   // 開新表單 / 清空重填
   const handleResetForm = () => {
+    if ((activeTab === 'seal' || activeTab === 'payment') && attachments.pendingAttachmentRetry[activeTab]) {
+      alert('尚有失敗附件，請先重試或移除後再繼續。');
+      return;
+    }
     if (activeTab === 'seal') {
       if (confirm('確定要建立全新用印／簽呈表單嗎？未儲存的變更將會遺失。')) {
         attachments.clear('seal');
@@ -484,6 +488,10 @@ const MainApp: React.FC = () => {
   // 從紀錄開啟用印／簽呈表單
   const handleOpenSealForm = (record: FormRecord) => {
     if (isProcessing) return;
+    if (attachments.pendingAttachmentRetry.seal) {
+      alert('尚有失敗附件，請先重試或移除後再繼續。');
+      return;
+    }
     if (attachments.pending.seal.length && !confirm('載入表單會清除目前待存檔或失敗附件，確定繼續？')) return;
     try {
       const hydrated = deserializeSealApproval(record);
@@ -504,6 +512,10 @@ const MainApp: React.FC = () => {
   // 從紀錄開啟請款單表單
   const handleOpenPaymentForm = (record: FormRecord) => {
     if (isProcessing) return;
+    if (attachments.pendingAttachmentRetry.payment) {
+      alert('尚有失敗附件，請先重試或移除後再繼續。');
+      return;
+    }
     if (attachments.pending.payment.length && !confirm('載入表單會清除目前待存檔或失敗附件，確定繼續？')) return;
     try {
       const hydrated = deserializePaymentRequest(record);
@@ -586,7 +598,12 @@ const MainApp: React.FC = () => {
               projectName={activeTab === 'payment' ? paymentData.project : ''}
               date={activeTab === 'payment' ? paymentData.applyDate : sealData.applyDate}
               pending={attachments.pending[activeTab]} onChange={items => attachments.change(activeTab, items)}
-              onDiscardFailed={id => attachments.discardFailedAttachment(activeTab, id)}
+              onDiscardFailed={async id => {
+                if (isProcessing) return;
+                setIsProcessing(true);
+                try { await attachments.discardFailedAttachment(activeTab, id); }
+                finally { setIsProcessing(false); }
+              }}
               retry={attachments.pendingAttachmentRetry[activeTab]} busy={isProcessing} refresh={attachments.refresh}
               onRetry={async () => {
                 const retry = attachments.pendingAttachmentRetry[activeTab];

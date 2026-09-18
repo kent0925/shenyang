@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { PendingAttachment, PendingAttachmentRetry } from '../models/attachments';
-import { retryAttachments } from './formAttachments';
+import { cancelFormAttachmentUpload, retryAttachments } from './formAttachments';
 
 type FormKind = 'seal' | 'payment';
 export function useFormAttachments() {
@@ -8,8 +8,16 @@ export function useFormAttachments() {
   const [pendingAttachmentRetry, setRetry] = useState<Record<FormKind, PendingAttachmentRetry | null>>({ seal: null, payment: null });
   const [refresh, setRefresh] = useState(0);
   const change = (kind: FormKind, attachments: PendingAttachment[]) => setPending(previous => ({ ...previous, [kind]: attachments }));
-  const discardFailedAttachment = (kind: FormKind, attachmentId: string) => {
+  const discardFailedAttachment = async (kind: FormKind, attachmentId: string) => {
     if (!pending[kind].some(a => a.attachmentId === attachmentId && a.status === 'failed')) return;
+    const retry = pendingAttachmentRetry[kind];
+    if (!retry) return;
+    try {
+      await cancelFormAttachmentUpload(retry.formId, retry.version, attachmentId);
+    } catch {
+      setPending(previous => ({ ...previous, [kind]: previous[kind].map(a => a.attachmentId === attachmentId ? { ...a, error: '附件暫存清理失敗，請再試一次。' } : a) }));
+      return;
+    }
     setPending(previous => ({ ...previous, [kind]: previous[kind].filter(a => a.attachmentId !== attachmentId) }));
     setRetry(previous => {
       const retry = previous[kind];
@@ -19,6 +27,7 @@ export function useFormAttachments() {
     });
   };
   const clear = (kind: FormKind) => {
+    if (pendingAttachmentRetry[kind]) return;
     change(kind, []); setRetry(previous => ({ ...previous, [kind]: null })); setRefresh(n => n + 1);
   };
   const upload = async (kind: FormKind, formId: string, version: number) => {

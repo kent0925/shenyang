@@ -64,6 +64,9 @@ export async function retryAttachments(retry: PendingAttachmentRetry,
 export function listFormAttachments(formId: string, version: number): Promise<FormAttachment[]> {
   return backendClient.request('listFormAttachments', { formId, version });
 }
+export function cancelFormAttachmentUpload(formId: string, expectedVersion: number, attachmentId: string): Promise<{ cancelled: boolean }> {
+  return backendClient.request('cancelFormAttachmentUpload', { formId, expectedVersion, attachmentId });
+}
 
 export async function downloadAttachment(formId: string, version: number, attachmentId: string): Promise<{ blob: Blob; fileName: string }> {
   const identity = { formId, version, attachmentId };
