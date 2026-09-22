@@ -10,7 +10,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { backendStorageService } from '../../services/backendStorage';
 import { BackendApiError } from '../../services/backendClient';
-import type { Project } from '../../models/backend';
+import type { FinancialSummary, Project, SubProject } from '../../models/backend';
+import { formatCurrency } from '../../utils/format';
 import {
   FolderKanban,
   Plus,
@@ -31,6 +32,8 @@ const COMMON_COMPANIES = [
 
 export const ProjectsPanel: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
+  const [subProjects, setSubProjects] = useState<SubProject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [apiError, setApiError] = useState<string | null>(null);
@@ -52,8 +55,10 @@ export const ProjectsPanel: React.FC = () => {
     setIsLoading(true);
     setApiError(null);
     try {
-      const data = await backendStorageService.listProjects();
+      const [data, summary, subList] = await Promise.all([backendStorageService.listProjects(), backendStorageService.getFinancialSummary().catch(() => null), backendStorageService.listSubProjects().catch(() => [] as SubProject[])]);
       setProjects(data);
+      setFinancialSummary(summary);
+      setSubProjects(subList);
     } catch (err: any) {
       if (err instanceof BackendApiError) {
         setApiError(err.safeMessage);
@@ -118,6 +123,14 @@ export const ProjectsPanel: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSaving || !validateForm()) return;
+
+    if (editingProject && formData.status === 'closed') {
+      const activeNames = subProjects.filter((item) => item.projectId === editingProject.projectId && item.status === 'active').map((item) => item.subProjectName);
+      if (activeNames.length) {
+        setFormErrors({ submit: `無法結案，目前仍有 ${activeNames.length} 個進行中的分案：${activeNames.join('、')}` });
+        return;
+      }
+    }
 
     setIsSaving(true);
     setApiError(null);
@@ -265,6 +278,9 @@ export const ProjectsPanel: React.FC = () => {
                     <th className="py-3 px-4">專案編號</th>
                     <th className="py-3 px-4">所屬公司</th>
                     <th className="py-3 px-4">專案名稱</th>
+                    <th className="py-3 px-4 text-right">分案彙總預算</th>
+                    <th className="py-3 px-4 text-right">已請款</th>
+                    <th className="py-3 px-4 text-right">剩餘</th>
                     <th className="py-3 px-4">狀態</th>
                     <th className="py-3 px-4 text-right">操作</th>
                   </tr>
@@ -281,6 +297,7 @@ export const ProjectsPanel: React.FC = () => {
                       <td className="py-3 px-4 text-slate-900 font-semibold">
                         {project.projectName}
                       </td>
+                      {(() => { const total = financialSummary?.projects[project.projectId]; return <><td className="py-3 px-4 text-right font-mono text-xs">{total ? formatCurrency(total.totalBudget) : '—'}</td><td className="py-3 px-4 text-right font-mono text-xs">{total ? formatCurrency(total.claimedAmount) : '—'}</td><td className="py-3 px-4 text-right font-mono text-xs">{total ? formatCurrency(total.remainingBudget) : '—'}</td></>; })()}
                       <td className="py-3 px-4">
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -289,7 +306,7 @@ export const ProjectsPanel: React.FC = () => {
                               : 'bg-slate-100 text-slate-600 border border-slate-200'
                           }`}
                         >
-                          {project.status === 'active' ? '進行中' : '已封存'}
+                          {project.status === 'active' ? '進行中' : '已結案'}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
@@ -325,7 +342,7 @@ export const ProjectsPanel: React.FC = () => {
                           : 'bg-slate-100 text-slate-600 border border-slate-200'
                       }`}
                     >
-                      {project.status === 'active' ? '進行中' : '已封存'}
+                      {project.status === 'active' ? '進行中' : '已結案'}
                     </span>
                   </div>
 
@@ -440,7 +457,7 @@ export const ProjectsPanel: React.FC = () => {
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
                 >
                   <option value="active">進行中</option>
-                  <option value="archived">已封存</option>
+                  <option value="closed">已結案</option>
                 </select>
               </div>
 

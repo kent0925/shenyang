@@ -100,11 +100,26 @@ function handleSaveProject(payload) {
     var existingRow = sheet.getRange(rowIndex, 1, 1, numCols).getValues()[0];
     var existingObj = rowToObject(SHEETS.PROJECTS, existingRow);
 
+    var nextStatus = payload.status || existingObj.status || 'active';
+    // 專案結案是由分案驅動，不能只靠前端 disabled。
+    if (String(nextStatus).toLowerCase() === 'closed') {
+      var subSheetForClose = masterSs.getSheetByName(SHEETS.SUB_PROJECTS);
+      var activeNames = [];
+      if (subSheetForClose && subSheetForClose.getLastRow() > 1) {
+        var subRowsForClose = subSheetForClose.getRange(2, 1, subSheetForClose.getLastRow() - 1, SCHEMAS[SHEETS.SUB_PROJECTS].columns.length).getValues();
+        subRowsForClose.forEach(function (row) {
+          var sub = rowToObject(SHEETS.SUB_PROJECTS, row);
+          if (String(sub.projectId) === projectId && String(sub.status || 'active').toLowerCase() === 'active') activeNames.push(sub.subProjectName || sub.subProjectId);
+        });
+      }
+      if (activeNames.length) throw createApiError('VALIDATION_ERROR', '無法結案，目前仍有 ' + activeNames.length + ' 個進行中的分案：' + activeNames.join('、'));
+    }
+
     var updatedObj = {
       projectId: existingObj.projectId,
       company: payload.company || existingObj.company,
       projectName: payload.projectName || existingObj.projectName,
-      status: payload.status || existingObj.status || 'active',
+      status: nextStatus,
       createdAt: existingObj.createdAt,
       updatedAt: getCurrentTimestamp(),
     };
@@ -168,7 +183,10 @@ function handleSaveSubProject(payload) {
     if (!ss) throw new Error('主檔資料庫未設定');
     projectSheet = ss.getSheetByName(SHEETS.PROJECTS);
     if (!projectSheet) throw createApiError('CONFIGURATION_ERROR', '找不到專案主檔工作表');
-    if (findRowIndexById(projectSheet, projectId) === -1) throw createApiError('NOT_FOUND', '找不到專案編號: ' + projectId);
+    var parentRow = findRowIndexById(projectSheet, projectId);
+    if (parentRow === -1) throw createApiError('NOT_FOUND', '找不到專案編號: ' + projectId);
+    var parentProject = rowToObject(SHEETS.PROJECTS, projectSheet.getRange(parentRow, 1, 1, SCHEMAS[SHEETS.PROJECTS].columns.length).getValues()[0]);
+    if (!payload.subProjectId && String(parentProject.status || '').toLowerCase() === 'closed') throw createApiError('VALIDATION_ERROR', '專案已結案，不可新增一般分案');
   } catch (error) {
     failStage('parent-project-lookup', error);
   }
@@ -189,7 +207,13 @@ function handleSaveSubProject(payload) {
     var cols = SCHEMAS[SHEETS.SUB_PROJECTS].columns.length;
     var old = rowToObject(SHEETS.SUB_PROJECTS, sheet.getRange(rowIndex, 1, 1, cols).getValues()[0]);
     if (String(old.projectId) !== projectId) throw createApiError('VALIDATION_ERROR', '分案不可變更所屬專案');
-    var updated = { subProjectId: old.subProjectId, projectId: old.projectId, subProjectName: name, status: payload.status || old.status || 'active', createdAt: old.createdAt, updatedAt: getCurrentTimestamp() };
+    var nextSubStatus = payload.status || old.status || 'active';
+    if (isActiveStatus(old.status) && String(nextSubStatus).toLowerCase() === 'closed') {
+      var activeBudgets = findActiveBudgetItemsForSubProject(ss, old.subProjectId);
+      if (activeBudgets.length) throw createApiError('VALIDATION_ERROR', '此分案仍有 ' + activeBudgets.length + ' 個進行中的預算項目，請先完成相關預算項目後再結案：' + activeBudgets.map(function (item) { return item.itemName || item.budgetItemId; }).join('、'));
+    }
+    if (!isActiveStatus(parentProject.status) && isActiveStatus(nextSubStatus)) throw createApiError('VALIDATION_ERROR', '上層專案已結案，請先重新開啟專案後再啟用分案');
+    var updated = { subProjectId: old.subProjectId, projectId: old.projectId, subProjectName: name, status: nextSubStatus, createdAt: old.createdAt, updatedAt: getCurrentTimestamp() };
     var updatedRow;
     Logger.log('[saveSubProject] stage=row-serialization');
     try {
@@ -445,8 +469,9 @@ function handleSaveBudgetItem(payload) {
   var masterSs = openMasterDatabaseFast();
   var projectSheet = masterSs.getSheetByName(SHEETS.PROJECTS);
   var projectRow = projectId ? findRowIndexById(projectSheet, projectId) : -1;
-  if (!projectId && !payload.budgetItemId) throw createApiError('VALIDATION_ERROR', '新增預算項目必須提供專案編號');
-  if (payload.budgetItemId && projectId && projectRow === -1) throw createApiError('NOT_FOUND', '找不到專案編號: ' + projectId);
+  if (!projectId) throw createApiError('VALIDATION_ERROR', '預算項目必須提供專案編號');
+  if (projectRow === -1) throw createApiError('NOT_FOUND', '找不到專案編號: ' + projectId);
+  var authoritativeProject = rowToObject(SHEETS.PROJECTS, projectSheet.getRange(projectRow, 1, 1, SCHEMAS[SHEETS.PROJECTS].columns.length).getValues()[0]);
   if (!payload.budgetItemId && !subProjectId) throw createApiError('VALIDATION_ERROR', '新增預算項目必須提供分案編號');
   var subProject = null;
   if (subProjectId) {
@@ -455,10 +480,12 @@ function handleSaveBudgetItem(payload) {
     if (subRow === -1) throw createApiError('NOT_FOUND', '找不到分案編號: ' + subProjectId);
     subProject = rowToObject(SHEETS.SUB_PROJECTS, subSheet.getRange(subRow, 1, 1, SCHEMAS[SHEETS.SUB_PROJECTS].columns.length).getValues()[0]);
     if (projectId && String(subProject.projectId) !== projectId) throw createApiError('VALIDATION_ERROR', '預算項目專案與分案不符');
+    if (String(subProject.status || '').toLowerCase() === 'closed') throw createApiError('VALIDATION_ERROR', '分案已結案，不可新增或修改一般預算項目');
   }
 
   var year = payload.year ? parseInt(payload.year, 10) : getCurrentYear();
-  var yearSs = getYearDatabase(year) || createYearDatabase(year);
+  // 寫入前一律走既有 idempotent schema repair；只追加缺少欄位，絕不重建年度資料。
+  var yearSs = createYearDatabase(year);
   var sheet = yearSs.getSheetByName(SHEETS.BUDGET_ITEMS);
   var budgetItemId = payload.budgetItemId ? String(payload.budgetItemId).trim() : '';
 
@@ -476,12 +503,24 @@ function handleSaveBudgetItem(payload) {
     var existingRow = sheet.getRange(rowIndex, 1, 1, numCols).getValues()[0];
     var existingObj = rowToObject(SHEETS.BUDGET_ITEMS, existingRow);
 
+    // 舊資料可能未帶 subProjectId；不可自行猜測歸屬。其餘已關聯資料也必須遵守結案鎖定。
+    if (!subProject && existingObj.subProjectId) {
+      var existingSubSheet = masterSs.getSheetByName(SHEETS.SUB_PROJECTS);
+      var existingSubRow = findRowIndexById(existingSubSheet, String(existingObj.subProjectId));
+      if (existingSubRow !== -1) {
+        var existingSub = rowToObject(SHEETS.SUB_PROJECTS, existingSubSheet.getRange(existingSubRow, 1, 1, SCHEMAS[SHEETS.SUB_PROJECTS].columns.length).getValues()[0]);
+        if (String(existingSub.status || '').toLowerCase() === 'closed') throw createApiError('VALIDATION_ERROR', '分案已結案，不可新增或修改一般預算項目');
+      }
+    }
+
+    var nextBudgetStatus = payload.status || existingObj.status || 'active';
+    if (isActiveStatus(nextBudgetStatus) && (!isActiveStatus(authoritativeProject.status) || (subProject && !isActiveStatus(subProject.status)))) throw createApiError('VALIDATION_ERROR', '上層專案或分案已結案，不可重新啟用預算項目');
     var updatedObj = {
       budgetItemId: existingObj.budgetItemId,
       year: String(year),
       projectId: payload.projectId !== undefined ? payload.projectId : existingObj.projectId,
-      company: payload.company || existingObj.company,
-      projectName: payload.projectName || existingObj.projectName,
+      company: authoritativeProject.company,
+      projectName: authoritativeProject.projectName,
       subProjectId: payload.subProjectId !== undefined ? subProjectId : (existingObj.subProjectId || ''),
       subProjectName: subProject ? subProject.subProjectName : (payload.subProjectName !== undefined ? payload.subProjectName : (existingObj.subProjectName || '')),
       itemName: payload.itemName || existingObj.itemName,
@@ -499,13 +538,14 @@ function handleSaveBudgetItem(payload) {
     return updatedObj;
   } else {
     // 新增預算項目
+    if (!isActiveStatus(authoritativeProject.status) || !subProject || !isActiveStatus(subProject.status)) throw createApiError('VALIDATION_ERROR', '上層專案或分案已結案，不可新增預算項目');
     var newBudgetItemId = getNextId(ID_TYPES.BUDGET, year);
     var newBudgetItemObj = {
       budgetItemId: newBudgetItemId,
       year: String(year),
       projectId: payload.projectId ? String(payload.projectId).trim() : '',
-      company: String(payload.company).trim(),
-      projectName: String(payload.projectName).trim(),
+      company: authoritativeProject.company,
+      projectName: authoritativeProject.projectName,
       subProjectId: subProjectId,
       subProjectName: subProject.subProjectName,
       itemName: String(payload.itemName).trim(),
@@ -525,8 +565,229 @@ function handleSaveBudgetItem(payload) {
 }
 
 // ==========================================
-// 4. Forms API
+// 4. 請款週期規則與期別 Snapshot API
 // ==========================================
+
+function toIsoDate(value) {
+  if (!value) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, 'Asia/Taipei', 'yyyy-MM-dd');
+  }
+  var text = String(value).trim();
+  var match = text.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (!match) return '';
+  return match[1] + '-' + ('0' + match[2]).slice(-2) + '-' + ('0' + match[3]).slice(-2);
+}
+
+function isActiveStatus(status) { return String(status || 'active').toLowerCase() === 'active'; }
+
+function listConfiguredYears(masterSs) {
+  var years = [getCurrentYear()];
+  var yearSheet = masterSs.getSheetByName(SHEETS.YEAR_CONFIG);
+  if (!yearSheet || yearSheet.getLastRow() <= 1) return years;
+  yearSheet.getRange(2, 1, yearSheet.getLastRow() - 1, SCHEMAS[SHEETS.YEAR_CONFIG].columns.length).getValues().forEach(function (row) {
+    var config = rowToObject(SHEETS.YEAR_CONFIG, row); var year = Number(config.year);
+    if (year && years.indexOf(year) === -1) years.push(year);
+  });
+  return years;
+}
+
+function findActiveBudgetItemsForSubProject(masterSs, subProjectId) {
+  var active = [];
+  listConfiguredYears(masterSs).forEach(function (year) {
+    var yearSs = getYearDatabase(year); if (!yearSs) return;
+    var sheet = yearSs.getSheetByName(SHEETS.BUDGET_ITEMS); if (!sheet || sheet.getLastRow() <= 1) return;
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, SCHEMAS[SHEETS.BUDGET_ITEMS].columns.length).getValues().forEach(function (row) {
+      var item = rowToObject(SHEETS.BUDGET_ITEMS, row);
+      if (String(item.subProjectId || '') === String(subProjectId) && isActiveStatus(item.status)) active.push(item);
+    });
+  });
+  return active;
+}
+
+function isoDateFromParts(year, monthIndex, day) {
+  return Utilities.formatDate(new Date(year, monthIndex, day, 12, 0, 0), 'Asia/Taipei', 'yyyy-MM-dd');
+}
+
+function parseIsoDate(iso) {
+  var m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+}
+
+function validateBillingRuleInput(payload) {
+  var submission = Number(payload.submissionDay);
+  var paymentOffset = Number(payload.paymentMonthOffset);
+  var paymentDay = Number(payload.paymentDay);
+  var effectiveFrom = toIsoDate(payload.effectiveFrom);
+  if (!effectiveFrom) throw createApiError('VALIDATION_ERROR', '新規則生效日為必填欄位');
+  if (!Number.isInteger(submission) || submission < 1 || submission > 28) throw createApiError('VALIDATION_ERROR', '送件日必須介於 1 至 28 日');
+  if (!Number.isInteger(paymentOffset) || paymentOffset < 0 || paymentOffset > 12) throw createApiError('VALIDATION_ERROR', '付款月份必須為本月至 12 個月後');
+  if (!Number.isInteger(paymentDay) || paymentDay < 1 || paymentDay > 28) throw createApiError('VALIDATION_ERROR', '付款日必須介於 1 至 28 日');
+  return { effectiveFrom: effectiveFrom, submissionDay: submission, paymentMonthOffset: paymentOffset, paymentDay: paymentDay };
+}
+
+function listBillingCycleRulesInternal(masterSs) {
+  var sheet = masterSs.getSheetByName(SHEETS.BILLING_CYCLE_RULES);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, SCHEMAS[SHEETS.BILLING_CYCLE_RULES].columns.length).getValues()
+    .map(function (row) { return rowToObject(SHEETS.BILLING_CYCLE_RULES, row); })
+    .filter(function (rule) { return rule.ruleId; })
+    .map(function (rule) { rule.effectiveFrom = toIsoDate(rule.effectiveFrom); return rule; })
+    .sort(function (a, b) { return String(a.effectiveFrom).localeCompare(String(b.effectiveFrom)); });
+}
+
+function ensureDefaultBillingRule(masterSs) {
+  var rules = listBillingCycleRulesInternal(masterSs);
+  if (rules.length) return rules;
+  var sheet = masterSs.getSheetByName(SHEETS.BILLING_CYCLE_RULES);
+  var rule = { ruleId: 'BCR-DEFAULT', effectiveFrom: '1970-01-01', submissionDay: 20, paymentMonthOffset: 1, paymentDay: 15, createdAt: getCurrentTimestamp(), updatedAt: getCurrentTimestamp() };
+  sheet.appendRow(objectToRow(SHEETS.BILLING_CYCLE_RULES, rule));
+  return [rule];
+}
+
+function calculateBillingPeriodSnapshot(claimDate, rule) {
+  var date = parseIsoDate(toIsoDate(claimDate));
+  if (!date) throw createApiError('VALIDATION_ERROR', '請款日期必須為合法日期');
+  var endYear = date.getFullYear();
+  var endMonth = date.getMonth();
+  var periodEnd = isoDateFromParts(endYear, endMonth + 1, 0);
+  var periodStart = isoDateFromParts(endYear, endMonth, 1);
+  var submissionDate = isoDateFromParts(endYear, endMonth, Number(rule.submissionDay));
+  var expectedPaymentDate = isoDateFromParts(endYear, endMonth + Number(rule.paymentMonthOffset), Number(rule.paymentDay));
+  if (expectedPaymentDate < submissionDate) throw createApiError('VALIDATION_ERROR', '預計付款日不得早於送件日');
+  return {
+    billingPeriodId: 'BPR-' + endYear + ('0' + (endMonth + 1)).slice(-2),
+    claimPeriodKey: endYear + '-' + ('0' + (endMonth + 1)).slice(-2),
+    ruleId: rule.ruleId,
+    periodName: endYear + ' 年 ' + (endMonth + 1) + ' 月請款',
+    periodStart: periodStart,
+    periodEnd: periodEnd,
+    submissionDate: submissionDate,
+    expectedPaymentDate: expectedPaymentDate,
+    status: 'open',
+  };
+}
+
+function listBillingPeriodsInternal(masterSs) {
+  var sheet = masterSs.getSheetByName(SHEETS.BILLING_PERIODS);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, SCHEMAS[SHEETS.BILLING_PERIODS].columns.length).getValues()
+    .map(function (row) { return rowToObject(SHEETS.BILLING_PERIODS, row); })
+    .filter(function (item) { return item.billingPeriodId; })
+    .map(function (item) { item.periodStart = toIsoDate(item.periodStart); item.periodEnd = toIsoDate(item.periodEnd); item.submissionDate = toIsoDate(item.submissionDate); item.expectedPaymentDate = toIsoDate(item.expectedPaymentDate); return item; });
+}
+
+function rangesOverlap(startA, endA, startB, endB) { return startA <= endB && startB <= endA; }
+
+function getOrCreateBillingPeriod(claimDate) {
+  var masterSs = getMasterDatabase();
+  var candidateRules = ensureDefaultBillingRule(masterSs).filter(function (candidate) { return String(candidate.effectiveFrom) <= toIsoDate(claimDate); });
+  var tentativeRule = candidateRules.length ? candidateRules[candidateRules.length - 1] : ensureDefaultBillingRule(masterSs)[0];
+  var snapshot = calculateBillingPeriodSnapshot(claimDate, tentativeRule);
+  var periods = listBillingPeriodsInternal(masterSs);
+  var existing = periods.filter(function (period) { return period.billingPeriodId === snapshot.billingPeriodId; })[0];
+  if (existing) return existing;
+  var overlaps = periods.filter(function (period) { return rangesOverlap(snapshot.periodStart, snapshot.periodEnd, period.periodStart, period.periodEnd); });
+  if (overlaps.length) throw createApiError('VALIDATION_ERROR', '新請款週期與既有期別重疊，請先由管理者修正單一期別');
+  snapshot.createdAt = getCurrentTimestamp();
+  snapshot.updatedAt = getCurrentTimestamp();
+  masterSs.getSheetByName(SHEETS.BILLING_PERIODS).appendRow(objectToRow(SHEETS.BILLING_PERIODS, snapshot));
+  return snapshot;
+}
+
+function handleListBillingCycleRules(payload) { return ensureDefaultBillingRule(getMasterDatabase()); }
+function handleListBillingPeriods(payload) {
+  var periods = listBillingPeriodsInternal(getMasterDatabase());
+  return periods.sort(function (a, b) { return String(b.periodEnd).localeCompare(String(a.periodEnd)); });
+}
+
+function handlePreviewBillingCycleRule(payload) {
+  var input = validateBillingRuleInput(payload || {});
+  var masterSs = getMasterDatabase();
+  var existing = listBillingPeriodsInternal(masterSs);
+  var preview = calculateBillingPeriodSnapshot(input.effectiveFrom, { ruleId: 'PREVIEW', submissionDay: input.submissionDay, paymentMonthOffset: input.paymentMonthOffset, paymentDay: input.paymentDay });
+  var overlaps = existing.filter(function (period) { return rangesOverlap(preview.periodStart, preview.periodEnd, period.periodStart, period.periodEnd); });
+  return { proposed: preview, historicalPeriodsUnchanged: true, existingClaimsUnchanged: true, overlaps: overlaps.map(function (item) { return item.periodName; }), requiresCoverageConfirmation: false, coverageWarning: '' };
+}
+
+function handleSaveBillingCycleRule(payload) {
+  var input = validateBillingRuleInput(payload || {});
+  var preview = handlePreviewBillingCycleRule(input);
+  if (preview.overlaps.length) throw createApiError('VALIDATION_ERROR', '新規則會與既有請款期別重疊：' + preview.overlaps.join('、'));
+  var masterSs = getMasterDatabase();
+  var sheet = masterSs.getSheetByName(SHEETS.BILLING_CYCLE_RULES);
+  var sameDate = listBillingCycleRulesInternal(masterSs).filter(function (rule) { return rule.effectiveFrom === input.effectiveFrom; });
+  if (sameDate.length) throw createApiError('VALIDATION_ERROR', '同一生效日已有請款週期規則，請改用另一個生效日');
+  var rule = { ruleId: 'BCR-' + input.effectiveFrom.replace(/-/g, ''), effectiveFrom: input.effectiveFrom, submissionDay: input.submissionDay, paymentMonthOffset: input.paymentMonthOffset, paymentDay: input.paymentDay, createdAt: getCurrentTimestamp(), updatedAt: getCurrentTimestamp() };
+  sheet.appendRow(objectToRow(SHEETS.BILLING_CYCLE_RULES, rule));
+  return rule;
+}
+
+function handleGetBillingPeriodReport(payload) {
+  var periodId = payload && payload.billingPeriodId ? String(payload.billingPeriodId) : '';
+  var periodKey = payload && payload.claimPeriodKey ? String(payload.claimPeriodKey) : '';
+  var year = payload && payload.year ? Number(payload.year) : getCurrentYear();
+  if (!periodId && !periodKey) throw createApiError('VALIDATION_ERROR', '請款期別為必填欄位');
+  var period = listBillingPeriodsInternal(getMasterDatabase()).filter(function (item) { return item.billingPeriodId === periodId || item.claimPeriodKey === periodKey; })[0];
+  if (!period) throw createApiError('NOT_FOUND', '找不到請款期別');
+  var forms = handleListForms({ year: year, formType: 'payment_request' }).filter(function (form) { return String(form.billingPeriodId || '') === String(period.billingPeriodId); });
+  var valid = forms.filter(function (form) { var status = String(form.status || '').toLowerCase(); return status === 'submitted' || status === 'approved' || status === 'paid'; });
+  function sumBy(key) { var map = {}; valid.forEach(function (form) { var name = form[key] || '未指定'; map[name] = (map[name] || 0) + (Number(form.amount) || 0); }); return Object.keys(map).map(function (name) { return { name: name, amount: map[name] }; }); }
+  return { period: period, rows: forms, claimCount: valid.length, totalAmount: valid.reduce(function (sum, form) { return sum + (Number(form.amount) || 0); }, 0), projectSubtotals: sumBy('projectName'), subProjectSubtotals: sumBy('subProjectName'), vendorSubtotals: sumBy('vendorName') };
+}
+
+function handleListMonthlyClaims(payload) { return handleGetBillingPeriodReport(payload); }
+
+function handleGetFinancialSummary(payload) {
+  var masterSs = openMasterDatabaseFast();
+  var yearSheet = masterSs.getSheetByName(SHEETS.YEAR_CONFIG);
+  var years = [getCurrentYear()];
+  if (yearSheet && yearSheet.getLastRow() > 1) {
+    yearSheet.getRange(2, 1, yearSheet.getLastRow() - 1, SCHEMAS[SHEETS.YEAR_CONFIG].columns.length).getValues().forEach(function (row) {
+      var item = rowToObject(SHEETS.YEAR_CONFIG, row); var year = Number(item.year); if (year && years.indexOf(year) === -1) years.push(year);
+    });
+  }
+  var projects = {}; var subProjects = {}; var orphanBudgetItemIds = [];
+  function ensure(map, id) { if (!map[id]) map[id] = { totalBudget: 0, claimedAmount: 0, remainingBudget: 0 }; return map[id]; }
+  years.forEach(function (year) {
+    var ss = getYearDatabase(year); if (!ss) return;
+    var budgetSheet = ss.getSheetByName(SHEETS.BUDGET_ITEMS);
+    if (budgetSheet && budgetSheet.getLastRow() > 1) {
+      budgetSheet.getRange(2, 1, budgetSheet.getLastRow() - 1, SCHEMAS[SHEETS.BUDGET_ITEMS].columns.length).getValues().forEach(function (row) {
+        var budget = rowToObject(SHEETS.BUDGET_ITEMS, row);
+        if (!budget.budgetItemId) return;
+        if (!budget.subProjectId) { orphanBudgetItemIds.push(budget.budgetItemId); return; }
+        ensure(projects, String(budget.projectId)).totalBudget += Number(budget.budgetAmount) || 0;
+        ensure(subProjects, String(budget.subProjectId)).totalBudget += Number(budget.budgetAmount) || 0;
+      });
+    }
+    var formSheet = ss.getSheetByName(SHEETS.FORMS);
+    if (formSheet && formSheet.getLastRow() > 1) {
+      formSheet.getRange(2, 1, formSheet.getLastRow() - 1, SCHEMAS[SHEETS.FORMS].columns.length).getValues().forEach(function (row) {
+        var form = rowToObject(SHEETS.FORMS, row); var status = String(form.status || '').toLowerCase();
+        if (form.formType !== 'payment_request' || !form.budgetItemId || (status !== 'submitted' && status !== 'approved' && status !== 'paid')) return;
+        var amount = Number(form.amount) || 0;
+        ensure(projects, String(form.projectId)).claimedAmount += amount;
+        ensure(subProjects, String(form.subProjectId)).claimedAmount += amount;
+      });
+    }
+  });
+  Object.keys(projects).forEach(function (id) { projects[id].remainingBudget = projects[id].totalBudget - projects[id].claimedAmount; });
+  Object.keys(subProjects).forEach(function (id) { subProjects[id].remainingBudget = subProjects[id].totalBudget - subProjects[id].claimedAmount; });
+  return { projects: projects, subProjects: subProjects, orphanBudgetItemIds: orphanBudgetItemIds };
+}
+
+// ==========================================
+// 5. Forms API
+// ==========================================
+
+function normalizeFormSnapshot(form) {
+  ['periodStart', 'periodEnd', 'submissionDate', 'expectedPaymentDate'].forEach(function (key) {
+    if (form[key]) form[key] = toIsoDate(form[key]);
+  });
+  return form;
+}
 
 function handleListForms(payload) {
   var year = (payload && payload.year) ? parseInt(payload.year, 10) : getCurrentYear();
@@ -552,6 +813,7 @@ function handleListForms(payload) {
 
   for (var i = 0; i < rows.length; i++) {
     var form = rowToObject(SHEETS.FORMS, rows[i]);
+    normalizeFormSnapshot(form);
     if (form.formId) {
       if (formType && form.formType !== formType) continue;
       if (projectId && form.projectId !== projectId) continue;
@@ -600,7 +862,7 @@ function handleGetForm(payload) {
 
   var numCols = SCHEMAS[SHEETS.FORMS].columns.length;
   var rowValues = sheet.getRange(rowIndex, 1, 1, numCols).getValues()[0];
-  return rowToObject(SHEETS.FORMS, rowValues);
+  return normalizeFormSnapshot(rowToObject(SHEETS.FORMS, rowValues));
 }
 
 /**
@@ -617,7 +879,7 @@ function handleGetForm(payload) {
  * @param {Object} payload 儲存表單 payload
  * @param {string} [excludeFormId] 更新表單時需排除的 formId
  */
-function validatePaymentBudget(year, payload, excludeFormId) {
+function validatePaymentBudget(year, payload, excludeFormId, isNewPayment) {
   var budgetItemId = payload.budgetItemId ? String(payload.budgetItemId).trim() : '';
   if (!budgetItemId) return;
 
@@ -639,6 +901,8 @@ function validatePaymentBudget(year, payload, excludeFormId) {
   var numCols = SCHEMAS[SHEETS.BUDGET_ITEMS].columns.length;
   var budgetRowValues = budgetSheet.getRange(budgetRowIndex, 1, 1, numCols).getValues()[0];
   var budgetItem = rowToObject(SHEETS.BUDGET_ITEMS, budgetRowValues);
+
+  if (isNewPayment && !isActiveStatus(budgetItem.status)) throw createApiError('VALIDATION_ERROR', '預算項目已結案，不可建立新的有預算請款');
 
   // 1. 專案關聯驗證
   var payloadProjectId = payload.projectId
@@ -742,18 +1006,25 @@ function handleSaveForm(payload) {
     ? String(payload.budgetItemId).trim()
     : '';
   var subProjectId = payload.subProjectId ? String(payload.subProjectId).trim() : '';
+  var billingPeriod = null;
 
   if (payload.formType === 'payment_request') {
     if (!payload.projectId || String(payload.projectId).trim() === '') throw createApiError('VALIDATION_ERROR', '請款表單必須提供專案編號');
     if (!subProjectId) throw createApiError('VALIDATION_ERROR', '新請款表單必須提供分案編號');
     var masterFormSs = openMasterDatabaseFast();
     var formProjectSheet = masterFormSs.getSheetByName(SHEETS.PROJECTS);
-    if (findRowIndexById(formProjectSheet, String(payload.projectId).trim()) === -1) throw createApiError('NOT_FOUND', '找不到專案編號: ' + payload.projectId);
+    var formProjectRow = findRowIndexById(formProjectSheet, String(payload.projectId).trim());
+    if (formProjectRow === -1) throw createApiError('NOT_FOUND', '找不到專案編號: ' + payload.projectId);
+    var formProject = rowToObject(SHEETS.PROJECTS, formProjectSheet.getRange(formProjectRow, 1, 1, SCHEMAS[SHEETS.PROJECTS].columns.length).getValues()[0]);
     var formSubSheet = masterFormSs.getSheetByName(SHEETS.SUB_PROJECTS);
     var formSubRow = findRowIndexById(formSubSheet, subProjectId);
     if (formSubRow === -1) throw createApiError('NOT_FOUND', '找不到分案編號: ' + subProjectId);
     var formSub = rowToObject(SHEETS.SUB_PROJECTS, formSubSheet.getRange(formSubRow, 1, 1, SCHEMAS[SHEETS.SUB_PROJECTS].columns.length).getValues()[0]);
     if (String(formSub.projectId) !== String(payload.projectId).trim()) throw createApiError('VALIDATION_ERROR', '請款表單專案與分案不符');
+    if (!formId && (!isActiveStatus(formProject.status) || !isActiveStatus(formSub.status))) throw createApiError('VALIDATION_ERROR', '專案或分案已結案，不可建立新的請款');
+    var rawPaymentPayload = payload.payloadJson;
+    if (typeof rawPaymentPayload === 'string') { try { rawPaymentPayload = JSON.parse(rawPaymentPayload); } catch (ignore) { rawPaymentPayload = {}; } }
+    billingPeriod = getOrCreateBillingPeriod((rawPaymentPayload && rawPaymentPayload.applyDate) || payload.claimDate || toIsoDate(new Date()));
   }
 
   if (isBudgetedPayment && !budgetItemId) {
@@ -779,7 +1050,8 @@ function handleSaveForm(payload) {
   }
 
   try {
-    var yearSs = getYearDatabase(year) || createYearDatabase(year);
+    // FormRecord 新增 Snapshot 欄位前，先安全補齊既有年度工作表 Header。
+    var yearSs = createYearDatabase(year);
     var sheet = yearSs.getSheetByName(SHEETS.FORMS);
 
     // 安全轉換 payloadJson，防止 [object Object] 寫入
@@ -808,6 +1080,14 @@ function handleSaveForm(payload) {
       var numCols = SCHEMAS[SHEETS.FORMS].columns.length;
       var existingRow = sheet.getRange(rowIndex, 1, 1, numCols).getValues()[0];
       var existingObj = rowToObject(SHEETS.FORMS, existingRow);
+      normalizeFormSnapshot(existingObj);
+
+      if (payload.formType === 'payment_request' && (String(payload.projectId || '') !== String(existingObj.projectId || '') || String(payload.subProjectId || '') !== String(existingObj.subProjectId || ''))) {
+        throw createApiError('VALIDATION_ERROR', '既有請款不得變更專案或分案歸屬');
+      }
+      if (payload.formType === 'payment_request' && String(payload.budgetItemId || '') !== String(existingObj.budgetItemId || '')) {
+        throw createApiError('VALIDATION_ERROR', '既有請款不得變更預算項目歸屬');
+      }
 
       // 2. Version check (樂觀併發防護)
       var currentVersion = Number(existingObj.version) || 1;
@@ -824,7 +1104,7 @@ function handleSaveForm(payload) {
 
       // 3. 執行伺服器端預算權威驗證
       if (isBudgetedPayment) {
-        validatePaymentBudget(year, payload, formId);
+        validatePaymentBudget(year, payload, formId, false);
       }
 
       var updatedObj = {
@@ -834,21 +1114,29 @@ function handleSaveForm(payload) {
         createdAt: existingObj.createdAt,
         updatedAt: getCurrentTimestamp(),
         createdBy: payload.createdBy !== undefined ? payload.createdBy : existingObj.createdBy,
-        company: payload.company || existingObj.company,
-        projectId: payload.projectId !== undefined ? payload.projectId : existingObj.projectId,
-        projectName: payload.projectName !== undefined ? payload.projectName : existingObj.projectName,
-        subProjectId: payload.subProjectId !== undefined ? payload.subProjectId : (existingObj.subProjectId || ''),
-        subProjectName: formSub ? formSub.subProjectName : (payload.subProjectName !== undefined ? payload.subProjectName : (existingObj.subProjectName || '')),
+        company: existingObj.company,
+        projectId: existingObj.projectId,
+        projectName: existingObj.projectName,
+        subProjectId: existingObj.subProjectId || '',
+        subProjectName: existingObj.subProjectName || '',
         vendorId: payload.vendorId !== undefined ? payload.vendorId : existingObj.vendorId,
         vendorName: payload.vendorName !== undefined ? payload.vendorName : existingObj.vendorName,
         vendorTaxId: payload.vendorTaxId !== undefined ? payload.vendorTaxId : existingObj.vendorTaxId,
         budgetType: payload.budgetType || existingObj.budgetType || 'budgeted',
-        budgetItemId: payload.budgetItemId !== undefined ? payload.budgetItemId : existingObj.budgetItemId,
+        budgetItemId: existingObj.budgetItemId,
         amount: payload.amount !== undefined ? amount : existingObj.amount,
         payloadJson: payloadJsonStr || existingObj.payloadJson,
         excelFileId: payload.excelFileId !== undefined ? payload.excelFileId : existingObj.excelFileId,
         pdfFileId: payload.pdfFileId !== undefined ? payload.pdfFileId : existingObj.pdfFileId,
         version: currentVersion + 1,
+        // 已建立表單必須沿用原 Snapshot，避免修改目前規則或重開表單時歷史漂移。
+        billingPeriodId: existingObj.billingPeriodId || (billingPeriod ? billingPeriod.billingPeriodId : ''),
+        claimPeriodKey: existingObj.claimPeriodKey || (billingPeriod ? billingPeriod.claimPeriodKey : ''),
+        periodName: existingObj.periodName || (billingPeriod ? billingPeriod.periodName : ''),
+        periodStart: existingObj.periodStart || (billingPeriod ? billingPeriod.periodStart : ''),
+        periodEnd: existingObj.periodEnd || (billingPeriod ? billingPeriod.periodEnd : ''),
+        submissionDate: existingObj.submissionDate || (billingPeriod ? billingPeriod.submissionDate : ''),
+        expectedPaymentDate: existingObj.expectedPaymentDate || (billingPeriod ? billingPeriod.expectedPaymentDate : ''),
       };
 
       var updatedRow = objectToRow(SHEETS.FORMS, updatedObj);
@@ -858,7 +1146,7 @@ function handleSaveForm(payload) {
       // 新增表單
       // 執行伺服器端預算權威驗證
       if (isBudgetedPayment) {
-        validatePaymentBudget(year, payload, undefined);
+        validatePaymentBudget(year, payload, undefined, true);
       }
 
       var newFormId = getNextId(ID_TYPES.FORM, year);
@@ -869,9 +1157,9 @@ function handleSaveForm(payload) {
         createdAt: getCurrentTimestamp(),
         updatedAt: getCurrentTimestamp(),
         createdBy: payload.createdBy ? String(payload.createdBy).trim() : '',
-        company: String(payload.company).trim(),
+        company: formProject ? formProject.company : String(payload.company).trim(),
         projectId: payload.projectId ? String(payload.projectId).trim() : '',
-        projectName: payload.projectName ? String(payload.projectName).trim() : '',
+        projectName: formProject ? formProject.projectName : (payload.projectName ? String(payload.projectName).trim() : ''),
         subProjectId: subProjectId,
         subProjectName: formSub ? formSub.subProjectName : (payload.subProjectName ? String(payload.subProjectName).trim() : ''),
         vendorId: payload.vendorId ? String(payload.vendorId).trim() : '',
@@ -884,6 +1172,13 @@ function handleSaveForm(payload) {
         excelFileId: payload.excelFileId ? String(payload.excelFileId).trim() : '',
         pdfFileId: payload.pdfFileId ? String(payload.pdfFileId).trim() : '',
         version: 1,
+        billingPeriodId: billingPeriod ? billingPeriod.billingPeriodId : '',
+        claimPeriodKey: billingPeriod ? billingPeriod.claimPeriodKey : '',
+        periodName: billingPeriod ? billingPeriod.periodName : '',
+        periodStart: billingPeriod ? billingPeriod.periodStart : '',
+        periodEnd: billingPeriod ? billingPeriod.periodEnd : '',
+        submissionDate: billingPeriod ? billingPeriod.submissionDate : '',
+        expectedPaymentDate: billingPeriod ? billingPeriod.expectedPaymentDate : '',
       };
 
       var newRow = objectToRow(SHEETS.FORMS, newFormObj);

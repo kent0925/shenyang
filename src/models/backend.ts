@@ -139,6 +139,73 @@ export interface SaveBudgetItemPayload {
 }
 
 // ==========================================
+// 4. 請款週期規則與期別 Snapshot
+// ==========================================
+
+export interface BillingCycleRule {
+  ruleId: string;
+  effectiveFrom: string;
+  submissionDay: number;
+  paymentMonthOffset: number;
+  paymentDay: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BillingPeriod {
+  billingPeriodId: string;
+  claimPeriodKey: string;
+  ruleId: string;
+  periodName: string;
+  periodStart: string;
+  periodEnd: string;
+  submissionDate: string;
+  expectedPaymentDate: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveBillingCycleRulePayload {
+  effectiveFrom: string;
+  submissionDay: number;
+  paymentMonthOffset: number;
+  paymentDay: number;
+  confirmCoverageGap?: boolean;
+}
+
+export interface BillingCycleRulePreview {
+  proposed: Omit<BillingPeriod, 'createdAt' | 'updatedAt'>;
+  historicalPeriodsUnchanged: boolean;
+  existingClaimsUnchanged: boolean;
+  overlaps: string[];
+  requiresCoverageConfirmation: boolean;
+  coverageWarning: string;
+}
+
+export interface BillingPeriodReport {
+  period: BillingPeriod;
+  rows: FormRecord[];
+  claimCount: number;
+  totalAmount: number;
+  projectSubtotals: Array<{ name: string; amount: number }>;
+  subProjectSubtotals: Array<{ name: string; amount: number }>;
+  vendorSubtotals: Array<{ name: string; amount: number }>;
+}
+
+export interface FinancialSummaryItem {
+  totalBudget: number;
+  claimedAmount: number;
+  remainingBudget: number;
+}
+
+export interface FinancialSummary {
+  projects: Record<string, FinancialSummaryItem>;
+  subProjects: Record<string, FinancialSummaryItem>;
+  orphanBudgetItemIds: string[];
+}
+
+// ==========================================
 // 4. 表單紀錄 (Forms)
 // ==========================================
 
@@ -170,6 +237,13 @@ export interface FormRecord<TPayload = any> {
   excelFileId: string;
   pdfFileId: string;
   version: number;
+  billingPeriodId?: string;
+  claimPeriodKey?: string;
+  periodName?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  submissionDate?: string;
+  expectedPaymentDate?: string;
   parsedPayload?: TPayload;
 }
 

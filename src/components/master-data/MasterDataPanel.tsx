@@ -10,9 +10,10 @@ import { ProjectsPanel } from './ProjectsPanel';
 import { VendorsPanel } from './VendorsPanel';
 import { BudgetItemsPanel } from './BudgetItemsPanel';
 import { SubProjectsPanel } from './SubProjectsPanel';
-import { FolderKanban, Building2, Coins, FolderTree } from 'lucide-react';
+import { BillingCyclesPanel } from './BillingCyclesPanel';
+import { FolderKanban, Building2, Coins, FolderTree, CalendarDays } from 'lucide-react';
 
-export type MasterDataTab = 'projects' | 'subprojects' | 'vendors' | 'budgets';
+export type MasterDataTab = 'projects' | 'subprojects' | 'vendors' | 'budgets' | 'billing';
 
 export const MasterDataPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<MasterDataTab>('projects');
@@ -21,7 +22,7 @@ export const MasterDataPanel: React.FC = () => {
     <div className="space-y-6">
       {/* 內部子頁籤 (Segmented Control) */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-b border-slate-200 pb-3 gap-2">
-        <div className="w-full sm:w-auto grid grid-cols-4 sm:flex sm:items-center gap-1 sm:gap-2 bg-slate-100 p-1 rounded-xl">
+        <div className="w-full sm:w-auto grid grid-cols-5 sm:flex sm:items-center gap-1 sm:gap-2 bg-slate-100 p-1 rounded-xl">
           <button
             type="button"
             onClick={() => setActiveTab('projects')}
@@ -35,6 +36,7 @@ export const MasterDataPanel: React.FC = () => {
             <span className="hidden sm:inline">專案主檔</span>
             <span className="sm:hidden inline">專案</span>
           </button>
+          <button type="button" onClick={() => setActiveTab('billing')} className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition ${activeTab === 'billing' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><CalendarDays className="w-4 h-4" /><span className="hidden sm:inline">請款週期／總表</span><span className="sm:hidden">週期</span></button>
 
           <button type="button" onClick={() => setActiveTab('subprojects')} className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition ${activeTab === 'subprojects' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}><FolderTree className="w-4 h-4" /><span className="hidden sm:inline">分案主檔</span><span className="sm:hidden">分案</span></button>
 
@@ -72,6 +74,7 @@ export const MasterDataPanel: React.FC = () => {
           {activeTab === 'subprojects' && '管理主專案下的固定兩層分案資料'}
           {activeTab === 'vendors' && '維護常用受款廠商、統編與銀行匯款帳戶'}
           {activeTab === 'budgets' && '維護各年度專案預算編列、指定廠商與執行額度'}
+          {activeTab === 'billing' && '維護請款規則版本並依已保存期別查看請款總表'}
         </div>
       </div>
 
@@ -80,6 +83,7 @@ export const MasterDataPanel: React.FC = () => {
       {activeTab === 'subprojects' && <SubProjectsPanel />}
       {activeTab === 'vendors' && <VendorsPanel />}
       {activeTab === 'budgets' && <BudgetItemsPanel />}
+      {activeTab === 'billing' && <BillingCyclesPanel />}
     </div>
   );
 };

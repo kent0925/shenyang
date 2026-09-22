@@ -29,6 +29,12 @@ import type {
   ArchivedFormFileResult,
   ArchivedVersionItem,
   ListArchivedFormVersionsPayload,
+  BillingCycleRule,
+  BillingPeriod,
+  SaveBillingCycleRulePayload,
+  BillingCycleRulePreview,
+  BillingPeriodReport,
+  FinancialSummary,
 } from '../models/backend';
 
 export class BackendStorageService {
@@ -87,6 +93,30 @@ export class BackendStorageService {
    */
   async saveBudgetItem(payload: SaveBudgetItemPayload): Promise<BudgetItem> {
     return backendClient.request<BudgetItem, SaveBudgetItemPayload>('saveBudgetItem', payload);
+  }
+
+  async listBillingCycleRules(): Promise<BillingCycleRule[]> {
+    return backendClient.request<BillingCycleRule[]>('listBillingCycleRules');
+  }
+
+  async previewBillingCycleRule(payload: SaveBillingCycleRulePayload): Promise<BillingCycleRulePreview> {
+    return backendClient.request<BillingCycleRulePreview, SaveBillingCycleRulePayload>('previewBillingCycleRule', payload);
+  }
+
+  async saveBillingCycleRule(payload: SaveBillingCycleRulePayload): Promise<BillingCycleRule> {
+    return backendClient.request<BillingCycleRule, SaveBillingCycleRulePayload>('saveBillingCycleRule', payload);
+  }
+
+  async listBillingPeriods(): Promise<BillingPeriod[]> {
+    return backendClient.request<BillingPeriod[]>('listBillingPeriods');
+  }
+
+  async getBillingPeriodReport(billingPeriodId: string, year: number): Promise<BillingPeriodReport> {
+    return backendClient.request<BillingPeriodReport, { billingPeriodId: string; year: number }>('getBillingPeriodReport', { billingPeriodId, year });
+  }
+
+  async getFinancialSummary(): Promise<FinancialSummary> {
+    return backendClient.request<FinancialSummary>('getFinancialSummary');
   }
 
   /**
