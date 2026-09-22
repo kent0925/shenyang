@@ -39,50 +39,67 @@ const childClass = (active: boolean) => `flex items-center gap-1.5 px-2.5 py-1.5
 
 export const TabNav: React.FC<Props> = ({ activeTab, claimSection = 'cycle', masterSection = 'projects', onChange }) => {
   return (
-    <div className="sticky top-16 z-20 flex items-stretch border-b border-slate-200 bg-white rounded-t-2xl px-2 sm:px-4 pt-2 sm:pt-2.5 overflow-x-auto overflow-y-hidden scrollbar-none">
-      <button
-        type="button"
-        onClick={() => onChange({ tab: 'seal' })}
-        className={topLevelClass(activeTab === 'seal')}
-      >
-        <Stamp className="w-4 h-4 flex-shrink-0" />
-        <span>用印／簽呈</span>
-      </button>
-
-      <button
-        type="button"
-        onClick={() => onChange({ tab: 'payment' })}
-        className={topLevelClass(activeTab === 'payment')}
-      >
-        <Receipt className="w-4 h-4 flex-shrink-0" />
-        <span>請款單</span>
-      </button>
-
-      <div className={`flex flex-col flex-shrink-0 border-b-2 -mb-px ${activeTab === 'claims' ? 'border-blue-600 bg-blue-50/50 rounded-t-lg' : 'border-transparent'}`}>
-        <button type="button" onClick={() => onChange({ tab: 'claims', section: 'cycle' })} className={topLevelClass(activeTab === 'claims')}>
-          <Receipt className="w-4 h-4 flex-shrink-0" /><span>請款管理</span>
+    <div className="sticky top-16 z-20 border-b border-slate-200 bg-white rounded-t-2xl">
+      <div className="flex items-stretch px-2 sm:px-4 pt-2 sm:pt-2.5 overflow-x-auto overflow-y-hidden scrollbar-none">
+        <button type="button" onClick={() => onChange({ tab: 'seal' })} className={topLevelClass(activeTab === 'seal')}>
+          <Stamp className="w-4 h-4 flex-shrink-0" />
+          <span>用印／簽呈</span>
         </button>
-        <div className="flex items-center gap-1 px-2 pb-1">
-          <button type="button" onClick={() => onChange({ tab: 'claims', section: 'cycle' })} className={childClass(activeTab === 'claims' && claimSection === 'cycle')}><CalendarDays className="w-3.5 h-3.5" /><span>請款週期</span></button>
-          <button type="button" onClick={() => onChange({ tab: 'claims', section: 'summary' })} className={childClass(activeTab === 'claims' && claimSection === 'summary')}><TableProperties className="w-3.5 h-3.5" /><span>請款總表</span></button>
-        </div>
+
+        <button type="button" onClick={() => onChange({ tab: 'payment' })} className={topLevelClass(activeTab === 'payment')}>
+          <Receipt className="w-4 h-4 flex-shrink-0" />
+          <span>請款單</span>
+        </button>
+
+        <button type="button" onClick={() => onChange({ tab: 'claims', section: claimSection })} className={topLevelClass(activeTab === 'claims')}>
+          <Receipt className="w-4 h-4 flex-shrink-0" />
+          <span>請款管理</span>
+        </button>
+
+        <button type="button" onClick={() => onChange({ tab: 'records' })} className={topLevelClass(activeTab === 'records')}>
+          <FileText className="w-4 h-4 flex-shrink-0" />
+          <span>表單紀錄</span>
+        </button>
+
+        <button type="button" onClick={() => onChange({ tab: 'master', section: masterSection })} className={topLevelClass(activeTab === 'master')}>
+          <Database className="w-4 h-4 flex-shrink-0" />
+          <span>主檔管理</span>
+        </button>
       </div>
 
-      <button type="button" onClick={() => onChange({ tab: 'records' })} className={topLevelClass(activeTab === 'records')}>
-        <FileText className="w-4 h-4 flex-shrink-0" /><span>表單紀錄</span>
-      </button>
-
-      <div className={`flex flex-col flex-shrink-0 border-b-2 -mb-px ${activeTab === 'master' ? 'border-blue-600 bg-blue-50/50 rounded-t-lg' : 'border-transparent'}`}>
-        <button type="button" onClick={() => onChange({ tab: 'master', section: 'projects' })} className={topLevelClass(activeTab === 'master')}>
-          <Database className="w-4 h-4 flex-shrink-0" /><span>主檔管理</span>
-        </button>
-        <div className="flex items-center gap-1 px-2 pb-1">
-          <button type="button" onClick={() => onChange({ tab: 'master', section: 'projects' })} className={childClass(activeTab === 'master' && masterSection === 'projects')}><FolderKanban className="w-3.5 h-3.5" /><span>專案主檔</span></button>
-          <button type="button" onClick={() => onChange({ tab: 'master', section: 'subprojects' })} className={childClass(activeTab === 'master' && masterSection === 'subprojects')}><FolderTree className="w-3.5 h-3.5" /><span>分案主檔</span></button>
-          <button type="button" onClick={() => onChange({ tab: 'master', section: 'budgets' })} className={childClass(activeTab === 'master' && masterSection === 'budgets')}><Coins className="w-3.5 h-3.5" /><span>預算項目</span></button>
-          <button type="button" onClick={() => onChange({ tab: 'master', section: 'vendors' })} className={childClass(activeTab === 'master' && masterSection === 'vendors')}><Building2 className="w-3.5 h-3.5" /><span>廠商主檔</span></button>
+      {activeTab === 'claims' && (
+        <div className="flex items-center gap-1 px-3 sm:px-6 pb-2 overflow-x-auto scrollbar-none" aria-label="請款管理子選單">
+          <button type="button" onClick={() => onChange({ tab: 'claims', section: 'cycle' })} className={childClass(claimSection === 'cycle')}>
+            <CalendarDays className="w-3.5 h-3.5" />
+            <span>請款週期</span>
+          </button>
+          <button type="button" onClick={() => onChange({ tab: 'claims', section: 'summary' })} className={childClass(claimSection === 'summary')}>
+            <TableProperties className="w-3.5 h-3.5" />
+            <span>請款總表</span>
+          </button>
         </div>
-      </div>
+      )}
+
+      {activeTab === 'master' && (
+        <div className="flex items-center gap-1 px-3 sm:px-6 pb-2 overflow-x-auto scrollbar-none" aria-label="主檔管理子選單">
+          <button type="button" onClick={() => onChange({ tab: 'master', section: 'projects' })} className={childClass(masterSection === 'projects')}>
+            <FolderKanban className="w-3.5 h-3.5" />
+            <span>專案主檔</span>
+          </button>
+          <button type="button" onClick={() => onChange({ tab: 'master', section: 'subprojects' })} className={childClass(masterSection === 'subprojects')}>
+            <FolderTree className="w-3.5 h-3.5" />
+            <span>分案主檔</span>
+          </button>
+          <button type="button" onClick={() => onChange({ tab: 'master', section: 'budgets' })} className={childClass(masterSection === 'budgets')}>
+            <Coins className="w-3.5 h-3.5" />
+            <span>預算項目</span>
+          </button>
+          <button type="button" onClick={() => onChange({ tab: 'master', section: 'vendors' })} className={childClass(masterSection === 'vendors')}>
+            <Building2 className="w-3.5 h-3.5" />
+            <span>廠商主檔</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
