@@ -21,6 +21,8 @@ var SHEETS = {
   SUB_PROJECTS: '分案主檔',
   VENDORS: '廠商主檔',
   YEAR_CONFIG: '年度設定',
+  BILLING_CYCLE_RULES: '請款週期規則',
+  BILLING_PERIODS: '請款期別',
 
   // 年度資料庫 Sheets
   BUDGET_ITEMS: '預算項目',
@@ -38,6 +40,8 @@ var MASTER_SHEET_NAMES = [
   SHEETS.SUB_PROJECTS,
   SHEETS.VENDORS,
   SHEETS.YEAR_CONFIG,
+  SHEETS.BILLING_CYCLE_RULES,
+  SHEETS.BILLING_PERIODS,
 ];
 
 /**
@@ -118,6 +122,36 @@ var SCHEMAS = {
     ],
   },
 
+  // 3. 請款週期規則：以版本及生效日保存；絕不回算既有期別。
+  '請款週期規則': {
+    columns: [
+      { key: 'ruleId', label: '規則編號', type: 'text' },
+      { key: 'effectiveFrom', label: '生效日', type: 'date' },
+      { key: 'submissionDay', label: '送件日', type: 'number' },
+      { key: 'paymentMonthOffset', label: '付款月份位移', type: 'number' },
+      { key: 'paymentDay', label: '付款日', type: 'number' },
+      { key: 'createdAt', label: '建立時間', type: 'datetime' },
+      { key: 'updatedAt', label: '更新時間', type: 'datetime' },
+    ],
+  },
+
+  // 4. 請款期別 Snapshot：歷史請款只讀取這些欄位，不使用目前規則重新計算。
+  '請款期別': {
+    columns: [
+      { key: 'billingPeriodId', label: '期別編號', type: 'text' },
+      { key: 'claimPeriodKey', label: '請款月份', type: 'text' },
+      { key: 'ruleId', label: '規則編號', type: 'text' },
+      { key: 'periodName', label: '期別名稱', type: 'text' },
+      { key: 'periodStart', label: '週期開始日', type: 'date' },
+      { key: 'periodEnd', label: '週期截止日', type: 'date' },
+      { key: 'submissionDate', label: '送件日', type: 'date' },
+      { key: 'expectedPaymentDate', label: '預計付款日', type: 'date' },
+      { key: 'status', label: '狀態', type: 'text' },
+      { key: 'createdAt', label: '建立時間', type: 'datetime' },
+      { key: 'updatedAt', label: '更新時間', type: 'datetime' },
+    ],
+  },
+
   // 4. 預算項目
   '預算項目': {
     columns: [
@@ -163,6 +197,13 @@ var SCHEMAS = {
       { key: 'excelFileId', label: 'Excel檔案編號', type: 'text' },
       { key: 'pdfFileId', label: 'PDF檔案編號', type: 'text' },
       { key: 'version', label: '版本', type: 'number' },
+      { key: 'billingPeriodId', label: '請款期別編號', type: 'text' },
+      { key: 'claimPeriodKey', label: '請款月份', type: 'text' },
+      { key: 'periodName', label: '請款期別名稱', type: 'text' },
+      { key: 'periodStart', label: '請款週期開始日', type: 'date' },
+      { key: 'periodEnd', label: '請款週期截止日', type: 'date' },
+      { key: 'submissionDate', label: '送件日', type: 'date' },
+      { key: 'expectedPaymentDate', label: '預計付款日', type: 'date' },
     ],
   },
 

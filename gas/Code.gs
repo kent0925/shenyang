@@ -127,6 +127,34 @@ function doPost(e) {
         resultData = handleSaveBudgetItem(payload);
         break;
 
+      case 'listBillingCycleRules':
+        resultData = handleListBillingCycleRules(payload);
+        break;
+
+      case 'previewBillingCycleRule':
+        resultData = handlePreviewBillingCycleRule(payload);
+        break;
+
+      case 'saveBillingCycleRule':
+        resultData = handleSaveBillingCycleRule(payload);
+        break;
+
+      case 'listBillingPeriods':
+        resultData = handleListBillingPeriods(payload);
+        break;
+
+      case 'getBillingPeriodReport':
+        resultData = handleGetBillingPeriodReport(payload);
+        break;
+
+      case 'listMonthlyClaims':
+        resultData = handleListMonthlyClaims(payload);
+        break;
+
+      case 'getFinancialSummary':
+        resultData = handleGetFinancialSummary(payload);
+        break;
+
       case 'listForms':
         resultData = handleListForms(payload);
         break;

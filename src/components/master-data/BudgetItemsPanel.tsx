@@ -261,6 +261,8 @@ export const BudgetItemsPanel: React.FC = () => {
       errors.projectId = '請選擇所屬專案（若無專案請先至專案主檔建立）';
     }
     if (!editingItem && !formData.subProjectId) errors.subProjectId = '新增預算項目必須選擇分案';
+    const selectedSubProject = subProjects.find((item) => item.subProjectId === formData.subProjectId);
+    if (selectedSubProject?.status === 'closed') errors.subProjectId = '分案已結案，不可新增或修改一般預算項目';
 
     // 3. 預算項目名稱必填驗證
     if (!formData.itemName.trim()) {
@@ -754,12 +756,12 @@ export const BudgetItemsPanel: React.FC = () => {
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-100"
                 >
                   <option value="">-- 請選擇專案 --</option>
-                  {projects.map((p) => {
+                  {projects.filter((p) => editingItem || p.status === 'active').map((p) => {
                     const isInactive = p.status && p.status !== 'active';
                     return (
                       <option key={p.projectId} value={p.projectId}>
                         {p.projectName} ({p.company})
-                        {isInactive ? ' [已停用]' : ''}
+                        {isInactive ? ' [已結案]' : ''}
                       </option>
                     );
                   })}
@@ -787,7 +789,7 @@ export const BudgetItemsPanel: React.FC = () => {
                 <label className="block text-xs font-semibold text-slate-600 mb-1">分案 {!editingItem && <span className="text-rose-500">*</span>}</label>
                 <select value={formData.subProjectId} disabled={!formData.projectId || !!editingItem} onChange={(e) => { const s = subProjects.find((x) => x.subProjectId === e.target.value); setFormData((prev) => ({ ...prev, subProjectId: e.target.value, subProjectName: s?.subProjectName || '' })); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100">
                   <option value="">{editingItem ? '未指定分案（舊資料）' : '-- 請選擇分案 --'}</option>
-                  {subProjects.filter((s) => s.projectId === formData.projectId).map((s) => <option key={s.subProjectId} value={s.subProjectId}>{s.subProjectName}</option>)}
+                  {subProjects.filter((s) => s.projectId === formData.projectId && (editingItem || s.status === 'active')).map((s) => <option key={s.subProjectId} value={s.subProjectId}>{s.subProjectName}{s.status === 'closed' ? ' [已結案]' : ''}</option>)}
                 </select>
                 {formErrors.subProjectId && <p className="text-xs text-rose-600 mt-1">{formErrors.subProjectId}</p>}
               </div>

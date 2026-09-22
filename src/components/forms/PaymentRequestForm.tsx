@@ -936,7 +936,7 @@ export const PaymentRequestForm: React.FC<Props> = ({
                 <option value="">-- 請選擇專案主檔 ({filteredProjects.length} 案) --</option>
                 {filteredProjects.map((p) => (
                   <option key={p.projectId} value={p.projectId}>
-                    {p.projectName} {p.status !== 'active' ? '(已封存)' : ''}
+                    {p.projectName} {p.status !== 'active' ? '(已結案)' : ''}
                   </option>
                 ))}
               </select>
@@ -958,7 +958,7 @@ export const PaymentRequestForm: React.FC<Props> = ({
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-slate-100"
             >
               <option value="">-- 請選擇分案 --</option>
-              {subProjects.filter((s) => s.projectId === data.projectId).map((s) => <option key={s.subProjectId} value={s.subProjectId}>{s.subProjectName}{s.status !== 'active' ? '（停用）' : ''}</option>)}
+              {subProjects.filter((s) => s.projectId === data.projectId).map((s) => <option key={s.subProjectId} value={s.subProjectId}>{s.subProjectName}{s.status !== 'active' ? '（已結案）' : ''}</option>)}
             </select>
             {errors.subProjectId && <p className="text-xs text-red-500 mt-1">{errors.subProjectId}</p>}
           </div>
