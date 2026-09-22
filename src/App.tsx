@@ -1,10 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { Header } from './components/layout/Header';
-import { TabNav, FormTab } from './components/layout/TabNav';
+import { TabNav, FormTab, NavigationTarget } from './components/layout/TabNav';
 import { SealApprovalForm } from './components/forms/SealApprovalForm';
 import { PaymentRequestForm } from './components/forms/PaymentRequestForm';
 import { FormRecordsPanel } from './components/forms/FormRecordsPanel';
 import { MasterDataPanel } from './components/master-data/MasterDataPanel';
+import { BillingCyclesPanel } from './components/master-data/BillingCyclesPanel';
 import { PreviewModal } from './components/preview/PreviewModal';
 import { SealApprovalView } from './components/preview/SealApprovalView';
 import { PaymentRequestView } from './components/preview/PaymentRequestView';
@@ -39,6 +40,8 @@ interface PendingArchiveInfo {
 
 const MainApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<FormTab>('seal');
+  const [claimSection, setClaimSection] = useState<'cycle' | 'summary'>('cycle');
+  const [masterSection, setMasterSection] = useState<'projects' | 'subprojects' | 'budgets' | 'vendors'>('projects');
   const [sealData, setSealData] = useState<SealApprovalData>(INITIAL_SEAL_APPROVAL_DATA);
   const [paymentData, setPaymentData] = useState<PaymentRequestData>(INITIAL_PAYMENT_REQUEST_DATA);
 
@@ -498,11 +501,13 @@ const MainApp: React.FC = () => {
     <div className="min-h-screen flex flex-col bg-slate-100">
       <Header />
 
-      <main className={`flex-1 max-w-5xl w-full mx-auto p-3 sm:p-6 ${activeTab === 'master' || activeTab === 'records' ? 'mb-8' : 'mb-24 sm:mb-20'}`}>
+      <main className={`flex-1 max-w-5xl w-full mx-auto p-3 sm:p-6 ${activeTab === 'master' || activeTab === 'claims' || activeTab === 'records' ? 'mb-8' : 'mb-24 sm:mb-20'}`}>
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200">
           {/* 表單／主檔頁籤切換 */}
-          <TabNav activeTab={activeTab} onChange={(tab) => {
-            setActiveTab(tab);
+          <TabNav activeTab={activeTab} claimSection={claimSection} masterSection={masterSection} onChange={(target: NavigationTarget) => {
+            setActiveTab(target.tab);
+            if (target.tab === 'claims') setClaimSection(target.section);
+            if (target.tab === 'master') setMasterSection(target.section);
             setErrors({});
           }} />
 
@@ -544,8 +549,9 @@ const MainApp: React.FC = () => {
                 onOpenPaymentForm={handleOpenPaymentForm}
               />
             )}
+            {activeTab === 'claims' && <BillingCyclesPanel focusSection={claimSection} />}
             {activeTab === 'master' && (
-              <MasterDataPanel />
+              <MasterDataPanel initialTab={masterSection} />
             )}
           </div>
         </div>
