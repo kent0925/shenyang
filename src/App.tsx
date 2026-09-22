@@ -595,7 +595,7 @@ const MainApp: React.FC = () => {
             )}
             {activeTab === 'claims' && <BillingCyclesPanel focusSection={claimSection} />}
             {activeTab === 'master' && (
-              <MasterDataPanel initialTab={masterSection} />
+              <MasterDataPanel activeTab={masterSection} />
             )}
             {(activeTab === 'seal' || activeTab === 'payment') && <AttachmentSection
               key={`${activeTab}-${activeTab === 'seal' ? currentSealFormId : currentPaymentFormId}`}
