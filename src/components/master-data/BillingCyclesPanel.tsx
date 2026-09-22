@@ -16,7 +16,11 @@ const readPayload = (payloadJson: string) => {
   catch { return {}; }
 };
 
-export const BillingCyclesPanel: React.FC = () => {
+interface Props {
+  focusSection?: 'cycle' | 'summary';
+}
+
+export const BillingCyclesPanel: React.FC<Props> = ({ focusSection = 'cycle' }) => {
   const [form, setForm] = useState(defaultForm);
   const [preview, setPreview] = useState<BillingCycleRulePreview | null>(null);
   const [periods, setPeriods] = useState<BillingPeriod[]>([]);
@@ -40,6 +44,10 @@ export const BillingCyclesPanel: React.FC = () => {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    document.getElementById(focusSection === 'cycle' ? 'claim-cycle-section' : 'claim-summary-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [focusSection]);
 
   const previewRule = async () => {
     setMessage('');
@@ -85,7 +93,7 @@ export const BillingCyclesPanel: React.FC = () => {
   };
 
   return <div className="space-y-6">
-    <section className="rounded-xl border border-slate-200 p-5">
+    <section id="claim-cycle-section" className="rounded-xl border border-slate-200 p-5 scroll-mt-28">
       <h3 className="font-bold text-slate-800 flex items-center gap-2"><CalendarDays className="w-5 h-5 text-blue-700" />請款週期設定</h3>
       <p className="mt-1 text-sm text-slate-500">新規則以生效日建立版本；已建立期別與歷史請款均保留原 Snapshot。</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
@@ -100,7 +108,7 @@ export const BillingCyclesPanel: React.FC = () => {
       {message && <p className="mt-3 text-sm text-amber-700">{message}</p>}
     </section>
 
-    <section className="rounded-xl border border-slate-200 p-5">
+    <section id="claim-summary-section" className="rounded-xl border border-slate-200 p-5 scroll-mt-28">
       <h3 className="font-bold text-slate-800 flex items-center gap-2"><TableProperties className="w-5 h-5 text-blue-700" />每月請款總表</h3>
       <div className="mt-4 flex flex-col sm:flex-row gap-2"><select value={selectedPeriodId} onChange={(e) => { setSelectedPeriodId(e.target.value); setReport(null); }} className="flex-1 rounded border p-2 text-sm"><option value="">請選擇請款期別</option>{periods.map((item) => <option key={item.billingPeriodId} value={item.billingPeriodId}>{item.periodName}（{item.periodStart} ～ {item.periodEnd}）</option>)}</select><button type="button" onClick={loadReport} disabled={!selectedPeriodId} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm disabled:opacity-50">查看總表</button></div>
       {isLoading && <p className="mt-4 text-sm text-slate-500"><Loader2 className="inline w-4 h-4 animate-spin mr-1" />讀取中…</p>}
