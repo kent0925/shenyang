@@ -34,6 +34,7 @@ import type {
   SaveBillingCycleRulePayload,
   BillingCycleRulePreview,
   BillingPeriodReport,
+  AnnualBillingReport,
   FinancialSummary,
 } from '../models/backend';
 
@@ -113,6 +114,13 @@ export class BackendStorageService {
 
   async getBillingPeriodReport(billingPeriodId: string, year: number): Promise<BillingPeriodReport> {
     return backendClient.request<BillingPeriodReport, { billingPeriodId: string; year: number }>('getBillingPeriodReport', { billingPeriodId, year });
+  }
+
+  async getAnnualBillingReport(year: number, options?: { startMonth?: number; endMonth?: number }): Promise<AnnualBillingReport> {
+    return backendClient.request<AnnualBillingReport, { year: number; startMonth?: number; endMonth?: number }>(
+      'getAnnualBillingReport',
+      { year, startMonth: options?.startMonth, endMonth: options?.endMonth }
+    );
   }
 
   async getFinancialSummary(): Promise<FinancialSummary> {

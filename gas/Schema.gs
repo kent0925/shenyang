@@ -127,6 +127,7 @@ var SCHEMAS = {
     columns: [
       { key: 'ruleId', label: '規則編號', type: 'text' },
       { key: 'effectiveFrom', label: '生效日', type: 'date' },
+      { key: 'cutoffDay', label: '結算截止日', type: 'number' },
       { key: 'submissionDay', label: '送件日', type: 'number' },
       { key: 'paymentMonthOffset', label: '付款月份位移', type: 'number' },
       { key: 'paymentDay', label: '付款日', type: 'number' },
@@ -272,6 +273,7 @@ var SCHEMAS = {
       { key: 'action', label: '動作', type: 'text' },
       { key: 'entityType', label: '資料類型', type: 'text' },
       { key: 'entityId', label: '資料編號', type: 'text' },
+
       { key: 'detailJson', label: '異動內容', type: 'json' },
     ],
   },
@@ -326,10 +328,21 @@ function rowToObject(sheetName, rowValues) {
   if (subIndex !== -1 && values.length === schema.columns.length - 2) {
     values.splice(subIndex, 0, '', '');
   }
+  // Legacy billing cycle rules predate cutoffDay column:
+  if (sheetName === '請款週期規則' && values.length === schema.columns.length - 1) {
+    var cutoffIdx = -1;
+    schema.columns.forEach(function (col, idx) { if (col.key === 'cutoffDay') cutoffIdx = idx; });
+    if (cutoffIdx !== -1) {
+      values.splice(cutoffIdx, 0, 20);
+    }
+  }
   var obj = {};
   schema.columns.forEach(function (col, idx) {
     obj[col.key] = (values && values[idx] !== undefined) ? values[idx] : null;
   });
+  if (sheetName === '請款週期規則' && (obj.cutoffDay === null || obj.cutoffDay === '' || obj.cutoffDay === undefined)) {
+    obj.cutoffDay = 20;
+  }
   return obj;
 }
 

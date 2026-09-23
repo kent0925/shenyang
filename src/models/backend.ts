@@ -145,6 +145,7 @@ export interface SaveBudgetItemPayload {
 export interface BillingCycleRule {
   ruleId: string;
   effectiveFrom: string;
+  cutoffDay?: number;
   submissionDay: number;
   paymentMonthOffset: number;
   paymentDay: number;
@@ -168,6 +169,7 @@ export interface BillingPeriod {
 
 export interface SaveBillingCycleRulePayload {
   effectiveFrom: string;
+  cutoffDay?: number;
   submissionDay: number;
   paymentMonthOffset: number;
   paymentDay: number;
@@ -188,9 +190,65 @@ export interface BillingPeriodReport {
   rows: FormRecord[];
   claimCount: number;
   totalAmount: number;
-  projectSubtotals: Array<{ name: string; amount: number }>;
-  subProjectSubtotals: Array<{ name: string; amount: number }>;
-  vendorSubtotals: Array<{ name: string; amount: number }>;
+  paidAmount?: number;
+  unpaidAmount?: number;
+  statusCounts?: Record<string, { count: number; amount: number }>;
+  projectSubtotals: Array<{ id?: string; name: string; amount: number }>;
+  subProjectSubtotals: Array<{ id?: string; name: string; projectId?: string; amount: number }>;
+  budgetItemSubtotals?: Array<{ id?: string; name: string; subProjectId?: string; amount: number }>;
+  vendorSubtotals: Array<{ id?: string; name: string; amount: number }>;
+}
+
+export interface AnnualBillingReportMonthlySummary {
+  month: number;
+  claimPeriodKey: string;
+  periodName: string;
+  periodStart: string;
+  periodEnd: string;
+  submissionDate: string;
+  expectedPaymentDate: string;
+  totalAmount: number;
+  claimCount: number;
+  paidAmount: number;
+  unpaidAmount: number;
+  rows?: FormRecord[];
+  projectSubtotals?: Array<{ id?: string; name: string; amount: number }>;
+  subProjectSubtotals?: Array<{ id?: string; name: string; projectId?: string; amount: number }>;
+  budgetItemSubtotals?: Array<{ id?: string; name: string; subProjectId?: string; amount: number }>;
+  vendorSubtotals?: Array<{ id?: string; name: string; amount: number }>;
+}
+
+export interface AnnualBillingReportProjectHierarchy {
+  id: string;
+  name: string;
+  amount: number;
+  subProjects: Array<{
+    id: string;
+    name: string;
+    amount: number;
+    budgetItems: Array<{
+      id: string;
+      name: string;
+      amount: number;
+    }>;
+  }>;
+}
+
+export interface AnnualBillingReport {
+  year: number;
+  startMonth?: number;
+  endMonth?: number;
+  totalAmount: number;
+  claimCount: number;
+  paidAmount: number;
+  unpaidAmount: number;
+  statusBreakdown: Record<string, { count: number; amount: number }>;
+  monthlySummaries: AnnualBillingReportMonthlySummary[];
+  projectSubtotals: Array<{ id?: string; name: string; amount: number }>;
+  subProjectSubtotals: Array<{ id?: string; name: string; amount: number }>;
+  budgetItemSubtotals: Array<{ id?: string; name: string; amount: number }>;
+  vendorSubtotals: Array<{ id?: string; name: string; amount: number }>;
+  projectHierarchy: AnnualBillingReportProjectHierarchy[];
 }
 
 export interface FinancialSummaryItem {
@@ -199,9 +257,16 @@ export interface FinancialSummaryItem {
   remainingBudget: number;
 }
 
+export interface FinancialSummaryBudgetItem {
+  budgetAmount: number;
+  claimedAmount: number;
+  remainingBudget: number;
+}
+
 export interface FinancialSummary {
   projects: Record<string, FinancialSummaryItem>;
   subProjects: Record<string, FinancialSummaryItem>;
+  budgetItems?: Record<string, FinancialSummaryBudgetItem>;
   orphanBudgetItemIds: string[];
 }
 

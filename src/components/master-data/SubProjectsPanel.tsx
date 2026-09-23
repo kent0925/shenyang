@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2, Edit2, FolderTree, Loader2, Plus, Search } from 'lucide-react';
 import { backendStorageService } from '../../services/backendStorage';
-import type { Project, SubProject } from '../../models/backend';
+import type { FinancialSummary, Project, SubProject } from '../../models/backend';
+import { formatCurrency } from '../../utils/format';
 
 export const SubProjectsPanel: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [items, setItems] = useState<SubProject[]>([]);
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
   const [query, setQuery] = useState('');
   const [projectFilter, setProjectFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -20,11 +22,12 @@ export const SubProjectsPanel: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [projectList, subList] = await Promise.all([
+      const [projectList, subList, summary] = await Promise.all([
         backendStorageService.listProjects(),
         backendStorageService.listSubProjects(),
+        backendStorageService.getFinancialSummary().catch(() => null),
       ]);
-      setProjects(projectList); setItems(subList);
+      setProjects(projectList); setItems(subList); setFinancialSummary(summary);
     } catch { setError('載入分案資料失敗，請稍後再試。'); }
     finally { setLoading(false); }
   }, []);
@@ -59,7 +62,10 @@ export const SubProjectsPanel: React.FC = () => {
     {success && <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700 flex gap-2"><CheckCircle2 className="w-4 h-4" />{success}</div>}
     {error && <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-sm text-rose-700 flex gap-2"><AlertCircle className="w-4 h-4" />{error}</div>}
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      {loading ? <div className="p-12 text-center text-slate-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div> : <table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="p-3">分案編號</th><th className="p-3">主專案</th><th className="p-3">分案名稱</th><th className="p-3">狀態</th><th className="p-3">操作</th></tr></thead><tbody className="divide-y">{filtered.map((item) => <tr key={item.subProjectId}><td className="p-3 font-mono text-xs">{item.subProjectId}</td><td className="p-3">{projectNames.get(item.projectId) || item.projectId}</td><td className="p-3 font-medium">{item.subProjectName}</td><td className="p-3">{item.status === 'active' ? '進行中' : '已結案'}</td><td className="p-3"><button type="button" onClick={() => openEdit(item)} className="inline-flex items-center gap-1 text-blue-700"><Edit2 className="w-3.5 h-3.5" />編輯</button></td></tr>)}</tbody></table>}
+      {loading ? <div className="p-12 text-center text-slate-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div> : <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="p-3">分案編號</th><th className="p-3">主專案</th><th className="p-3">分案名稱</th><th className="p-3 text-right">分案總預算</th><th className="p-3 text-right">累計請款</th><th className="p-3 text-right">剩餘預算</th><th className="p-3">狀態</th><th className="p-3">操作</th></tr></thead><tbody className="divide-y">{filtered.map((item) => {
+        const fin = financialSummary?.subProjects[item.subProjectId];
+        return <tr key={item.subProjectId} className="hover:bg-slate-50/80 transition"><td className="p-3 font-mono text-xs text-slate-600">{item.subProjectId}</td><td className="p-3">{projectNames.get(item.projectId) || item.projectId}</td><td className="p-3 font-medium text-slate-900">{item.subProjectName}</td><td className="p-3 text-right font-mono text-xs text-slate-900">{fin ? formatCurrency(fin.totalBudget) : '—'}</td><td className="p-3 text-right font-mono text-xs text-slate-600">{fin ? formatCurrency(fin.claimedAmount) : '—'}</td><td className="p-3 text-right font-mono text-xs font-semibold text-blue-700">{fin ? formatCurrency(fin.remainingBudget) : '—'}</td><td className="p-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${item.status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>{item.status === 'active' ? '進行中' : '已結案'}</span></td><td className="p-3"><button type="button" onClick={() => openEdit(item)} className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-900"><Edit2 className="w-3.5 h-3.5" />編輯</button></td></tr>;
+      })}</tbody></table></div>}
     </div>
     {modalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><form onSubmit={save} className="bg-white rounded-xl p-6 w-full max-w-md space-y-4"><h3 className="font-bold flex gap-2"><FolderTree className="w-5 h-5 text-blue-600" />{editing ? '編輯分案' : '新增分案'}</h3><select className="w-full p-2 border rounded-lg" value={form.projectId} disabled={!!editing || saving} onChange={(e) => setForm({ ...form, projectId: e.target.value })}><option value="">請選擇主專案</option>{projects.filter((p) => editing || p.status === 'active').map((p) => <option key={p.projectId} value={p.projectId}>{p.projectName}（{p.company}）</option>)}</select><input className="w-full p-2 border rounded-lg" placeholder="分案名稱" value={form.subProjectName} disabled={saving} onChange={(e) => setForm({ ...form, subProjectName: e.target.value })} /><select className="w-full p-2 border rounded-lg" value={form.status} disabled={saving} onChange={(e) => setForm({ ...form, status: e.target.value })}><option value="active">進行中</option><option value="closed">已結案</option></select><p className="text-xs text-slate-500">分案即使尚有未使用預算，仍可正常結案。</p><div className="flex justify-end gap-2"><button type="button" onClick={() => { setEditing(null); setModalOpen(false); setForm({ projectId: '', subProjectName: '', status: 'active' }); }}>取消</button><button type="submit" disabled={saving} className="px-4 py-2 bg-blue-700 text-white rounded-lg">儲存</button></div></form></div>}
   </div>;

@@ -4,15 +4,15 @@
  * 核心規範：
  * 1. 全面透過 backendStorageService 呼叫 API，嚴禁直接使用 fetch('/api/backend')。
  * 2. 專案主檔與廠商主檔嚴格依據關聯選擇，確保 projectId/company/projectName 與 vendorId/vendorName 一致性。
- * 3. 金額安全：字串輸入保全，提交時驗證 Number.isFinite，嚴禁使用 parseInt 截斷金額，嚴禁傳送 NaN/Infinity。
- * 4. 嚴格不實作 Delete 功能，遵守現有後端 contract。
- * 5. 嚴禁在 console.log 中輸出機敏金額或完整物件資訊。
+ * 3. 預算項目嚴格隸屬於分案 (SubProject)。
+ * 4. 金額安全：字串輸入保全，提交時驗證 Number.isFinite，嚴禁使用 parseInt 截斷金額，嚴禁傳送 NaN/Infinity。
+ * 5. 嚴格不實作 Delete 功能，遵守現有後端 contract。
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { backendStorageService } from '../../services/backendStorage';
 import { BackendApiError } from '../../services/backendClient';
-import type { BudgetItem, Project, Vendor, SubProject, SaveBudgetItemPayload } from '../../models/backend';
+import type { BudgetItem, Project, Vendor, SubProject, SaveBudgetItemPayload, FinancialSummary } from '../../models/backend';
 import {
   Coins,
   Plus,
@@ -26,6 +26,7 @@ import {
   FolderKanban,
   Building2,
   Calendar,
+  FolderTree,
 } from 'lucide-react';
 
 /**
@@ -42,6 +43,7 @@ export const BudgetItemsPanel: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [subProjects, setSubProjects] = useState<SubProject[]>([]);
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
 
   // 載入狀態
   const [isLoading, setIsLoading] = useState(true);
@@ -78,14 +80,15 @@ export const BudgetItemsPanel: React.FC = () => {
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-  // 1. 載入參照主檔（專案、廠商）與系統現行年度
+  // 1. 載入參照主檔（專案、分案、廠商、財務彙總）與系統現行年度
   const loadReferenceData = useCallback(async () => {
     try {
-      const [healthData, projectsData, subProjectsData, vendorsData] = await Promise.all([
+      const [healthData, projectsData, subProjectsData, vendorsData, summaryData] = await Promise.all([
         backendStorageService.health().catch(() => null),
         backendStorageService.listProjects().catch(() => [] as Project[]),
         backendStorageService.listSubProjects().catch(() => [] as SubProject[]),
         backendStorageService.listVendors().catch(() => [] as Vendor[]),
+        backendStorageService.getFinancialSummary().catch(() => null),
       ]);
 
       if (healthData && healthData.currentYear) {
@@ -99,6 +102,7 @@ export const BudgetItemsPanel: React.FC = () => {
       setProjects(projectsData);
       setSubProjects(subProjectsData);
       setVendors(vendorsData);
+      setFinancialSummary(summaryData);
     } catch {
       // 容錯處理：不中斷主畫面，後續由 loadBudgetItems 回報錯誤
     }
@@ -221,6 +225,8 @@ export const BudgetItemsPanel: React.FC = () => {
         projectId: '',
         company: '',
         projectName: '',
+        subProjectId: '',
+        subProjectName: '',
       }));
     }
   };
@@ -256,13 +262,17 @@ export const BudgetItemsPanel: React.FC = () => {
       errors.year = '請輸入合法的西元年份 (2000 ~ 2100)';
     }
 
-    // 2. 專案必填驗證
+    // 2. 專案與分案必填驗證
     if (!formData.projectId || !formData.projectName) {
       errors.projectId = '請選擇所屬專案（若無專案請先至專案主檔建立）';
     }
-    if (!editingItem && !formData.subProjectId) errors.subProjectId = '新增預算項目必須選擇分案';
+    if (!editingItem && !formData.subProjectId) {
+      errors.subProjectId = '新增預算項目必須選擇分案';
+    }
     const selectedSubProject = subProjects.find((item) => item.subProjectId === formData.subProjectId);
-    if (selectedSubProject?.status === 'closed') errors.subProjectId = '分案已結案，不可新增或修改一般預算項目';
+    if (selectedSubProject?.status === 'closed') {
+      errors.subProjectId = '該分案已結案，不可新增或修改預算項目';
+    }
 
     // 3. 預算項目名稱必填驗證
     if (!formData.itemName.trim()) {
@@ -317,7 +327,7 @@ export const BudgetItemsPanel: React.FC = () => {
         status: formData.status || 'active',
       };
 
-      const savedItem = await backendStorageService.saveBudgetItem(payload);
+      await backendStorageService.saveBudgetItem(payload);
 
       // 關閉 Modal 並更新列表
       setIsModalOpen(false);
@@ -325,20 +335,9 @@ export const BudgetItemsPanel: React.FC = () => {
       setSuccessMessage(editingItem ? '預算項目已儲存' : '預算項目新增成功');
       setTimeout(() => setSuccessMessage(null), 3000);
 
-      // 若目前篩選的年度符合，更新本機列表或重新讀取
-      if (selectedYear === yearNum) {
-        setBudgetItems((prev) => {
-          const index = prev.findIndex((b) => b.budgetItemId === savedItem.budgetItemId);
-          if (index !== -1) {
-            const next = [...prev];
-            next[index] = savedItem;
-            return next;
-          } else {
-            return [savedItem, ...prev];
-          }
-        });
-      } else {
-        // 切換至該預算項目所屬年度
+      // 重新載入列表與財務資料
+      await handleRefresh();
+      if (selectedYear !== yearNum) {
         setSelectedYear(yearNum);
       }
     } catch (err: any) {
@@ -367,6 +366,7 @@ export const BudgetItemsPanel: React.FC = () => {
         item.itemName.toLowerCase().includes(q) ||
         item.projectName.toLowerCase().includes(q) ||
         item.company.toLowerCase().includes(q) ||
+        (item.subProjectName && item.subProjectName.toLowerCase().includes(q)) ||
         (item.vendorName && item.vendorName.toLowerCase().includes(q)) ||
         item.budgetItemId.toLowerCase().includes(q)
       );
@@ -393,6 +393,13 @@ export const BudgetItemsPanel: React.FC = () => {
     return list;
   }, [currentYear]);
 
+  // 分案名稱對照表
+  const subProjectNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    subProjects.forEach((s) => map.set(s.subProjectId, s.subProjectName));
+    return map;
+  }, [subProjects]);
+
   return (
     <div className="space-y-4">
       {/* 頂部操作列：搜尋、年度篩選、專案篩選、重新載入、新增按鈕 */}
@@ -405,7 +412,7 @@ export const BudgetItemsPanel: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜尋預算項目、專案、廠商..."
+              placeholder="搜尋預算項目、專案、分案、廠商..."
               className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             />
             {searchQuery && (
@@ -519,40 +526,51 @@ export const BudgetItemsPanel: React.FC = () => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                    <th className="py-3 px-4">預算編號</th>
-                    <th className="py-3 px-4">年度</th>
-                    <th className="py-3 px-4">專案名稱 / 公司</th>
-                    <th className="py-3 px-4">項目名稱</th>
-                    <th className="py-3 px-4">指定廠商</th>
-                    <th className="py-3 px-4 text-right">預算金額</th>
-                    <th className="py-3 px-4 text-right">終止金額</th>
-                    <th className="py-3 px-4 text-right">可用餘額</th>
-                    <th className="py-3 px-4 text-center">狀態</th>
-                    <th className="py-3 px-4 text-center">操作</th>
+                    <th className="py-3 px-3">預算編號</th>
+                    <th className="py-3 px-2">年度</th>
+                    <th className="py-3 px-3">專案 / 公司</th>
+                    <th className="py-3 px-3">所屬分案</th>
+                    <th className="py-3 px-3">項目名稱</th>
+                    <th className="py-3 px-3">指定廠商</th>
+                    <th className="py-3 px-3 text-right">核定預算</th>
+                    <th className="py-3 px-3 text-right">累計請款</th>
+                    <th className="py-3 px-3 text-right">終止金額</th>
+                    <th className="py-3 px-3 text-right">剩餘預算</th>
+                    <th className="py-3 px-2 text-center">狀態</th>
+                    <th className="py-3 px-2 text-center">操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
                   {filteredAndSortedItems.map((item) => {
                     const bAmount = item.budgetAmount || 0;
                     const tAmount = item.terminatedAmount || 0;
-                    const balance = bAmount - tAmount;
+                    const fin = financialSummary?.budgetItems?.[item.budgetItemId];
+                    const claimedAmount = fin?.claimedAmount ?? 0;
+                    const remainingBudget = fin ? fin.remainingBudget : (bAmount - tAmount);
+                    const subName = item.subProjectName || (item.subProjectId ? subProjectNameMap.get(item.subProjectId) : '') || '未指定分案';
 
                     return (
                       <tr key={item.budgetItemId} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4 font-mono text-xs text-slate-600">
+                        <td className="py-3 px-3 font-mono text-xs text-slate-600">
                           {item.budgetItemId}
                         </td>
-                        <td className="py-3 px-4 text-slate-700 font-medium">
+                        <td className="py-3 px-2 text-slate-700 font-medium">
                           {item.year}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-3">
                           <div className="font-medium text-slate-900">{item.projectName}</div>
                           <div className="text-xs text-slate-500">{item.company}</div>
                         </td>
-                        <td className="py-3 px-4 font-semibold text-slate-800">
+                        <td className="py-3 px-3">
+                          <span className="inline-flex items-center gap-1 text-slate-800 font-medium">
+                            <FolderTree className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                            <span>{subName}</span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-semibold text-slate-800">
                           {item.itemName}
                         </td>
-                        <td className="py-3 px-4 text-slate-700">
+                        <td className="py-3 px-3 text-slate-700">
                           {item.vendorName ? (
                             <span className="inline-flex items-center gap-1">
                               <Building2 className="w-3.5 h-3.5 text-slate-400" />
@@ -562,16 +580,19 @@ export const BudgetItemsPanel: React.FC = () => {
                             <span className="text-slate-400 text-xs">（未指定）</span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono font-medium text-slate-900">
+                        <td className="py-3 px-3 text-right font-mono font-medium text-slate-900">
                           {formatCurrency(bAmount)}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono text-slate-500">
+                        <td className="py-3 px-3 text-right font-mono text-slate-600">
+                          {formatCurrency(claimedAmount)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-slate-400">
                           {formatCurrency(tAmount)}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono font-semibold text-blue-700">
-                          {formatCurrency(balance)}
+                        <td className="py-3 px-3 text-right font-mono font-semibold text-blue-700">
+                          {formatCurrency(remainingBudget)}
                         </td>
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-3 px-2 text-center">
                           <span
                             className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
                               item.status === 'active'
@@ -582,7 +603,7 @@ export const BudgetItemsPanel: React.FC = () => {
                             {item.status === 'active' ? '執行中' : '已結案'}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-3 px-2 text-center">
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(item)}
@@ -604,14 +625,21 @@ export const BudgetItemsPanel: React.FC = () => {
               {filteredAndSortedItems.map((item) => {
                 const bAmount = item.budgetAmount || 0;
                 const tAmount = item.terminatedAmount || 0;
-                const balance = bAmount - tAmount;
+                const fin = financialSummary?.budgetItems?.[item.budgetItemId];
+                const claimedAmount = fin?.claimedAmount ?? 0;
+                const remainingBudget = fin ? fin.remainingBudget : (bAmount - tAmount);
+                const subName = item.subProjectName || (item.subProjectId ? subProjectNameMap.get(item.subProjectId) : '') || '未指定分案';
 
                 return (
                   <div key={item.budgetItemId} className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-0.5">
                         <div className="font-semibold text-slate-900 text-base">{item.itemName}</div>
-                        <div className="text-xs text-slate-600">{item.projectName}</div>
+                        <div className="text-xs text-slate-600 flex items-center gap-1">
+                          <span>{item.projectName}</span>
+                          <span>•</span>
+                          <span className="text-blue-700 font-medium">{subName}</span>
+                        </div>
                         <div className="text-[11px] text-slate-400 flex items-center gap-1">
                           <span>{item.company}</span>
                           <span>•</span>
@@ -641,21 +669,21 @@ export const BudgetItemsPanel: React.FC = () => {
                     {/* 金額統計卡片 */}
                     <div className="grid grid-cols-3 gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-100 text-center">
                       <div>
-                        <div className="text-[10px] text-slate-400">預算金額</div>
+                        <div className="text-[10px] text-slate-400">核定預算</div>
                         <div className="font-mono text-xs font-medium text-slate-900 mt-0.5">
                           NT$ {formatCurrency(bAmount)}
                         </div>
                       </div>
                       <div>
-                        <div className="text-[10px] text-slate-400">終止金額</div>
-                        <div className="font-mono text-xs text-slate-500 mt-0.5">
-                          NT$ {formatCurrency(tAmount)}
+                        <div className="text-[10px] text-slate-400">累計請款</div>
+                        <div className="font-mono text-xs text-slate-600 mt-0.5">
+                          NT$ {formatCurrency(claimedAmount)}
                         </div>
                       </div>
                       <div>
-                        <div className="text-[10px] text-blue-600 font-medium">可用餘額</div>
+                        <div className="text-[10px] text-blue-600 font-medium">剩餘預算</div>
                         <div className="font-mono text-xs font-semibold text-blue-700 mt-0.5">
-                          NT$ {formatCurrency(balance)}
+                          NT$ {formatCurrency(remainingBudget)}
                         </div>
                       </div>
                     </div>
@@ -744,7 +772,7 @@ export const BudgetItemsPanel: React.FC = () => {
                 )}
               </div>
 
-              {/* 所屬專案選擇器 (連動帶入 company 與 projectName) */}
+              {/* 所屬專案選擇器 */}
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
                   所屬專案 <span className="text-rose-500">*</span>
@@ -786,12 +814,42 @@ export const BudgetItemsPanel: React.FC = () => {
 
               {/* 分案選擇（舊資料可保留未指定） */}
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">分案 {!editingItem && <span className="text-rose-500">*</span>}</label>
-                <select value={formData.subProjectId} disabled={!formData.projectId || !!editingItem} onChange={(e) => { const s = subProjects.find((x) => x.subProjectId === e.target.value); setFormData((prev) => ({ ...prev, subProjectId: e.target.value, subProjectName: s?.subProjectName || '' })); }} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  所屬分案 {!editingItem && <span className="text-rose-500">*</span>}
+                </label>
+                <select
+                  value={formData.subProjectId}
+                  disabled={!formData.projectId || isSaving}
+                  onChange={(e) => {
+                    const s = subProjects.find((x) => x.subProjectId === e.target.value);
+                    setFormData((prev) => ({
+                      ...prev,
+                      subProjectId: e.target.value,
+                      subProjectName: s?.subProjectName || '',
+                    }));
+                    if (formErrors.subProjectId) {
+                      setFormErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.subProjectId;
+                        return next;
+                      });
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100 focus:ring-2 focus:ring-blue-500 outline-none"
+                >
                   <option value="">{editingItem ? '未指定分案（舊資料）' : '-- 請選擇分案 --'}</option>
-                  {subProjects.filter((s) => s.projectId === formData.projectId && (editingItem || s.status === 'active')).map((s) => <option key={s.subProjectId} value={s.subProjectId}>{s.subProjectName}{s.status === 'closed' ? ' [已結案]' : ''}</option>)}
+                  {subProjects
+                    .filter((s) => s.projectId === formData.projectId && (editingItem || s.status === 'active'))
+                    .map((s) => (
+                      <option key={s.subProjectId} value={s.subProjectId}>
+                        {s.subProjectName}
+                        {s.status === 'closed' ? ' [已結案]' : ''}
+                      </option>
+                    ))}
                 </select>
-                {formErrors.subProjectId && <p className="text-xs text-rose-600 mt-1">{formErrors.subProjectId}</p>}
+                {formErrors.subProjectId && (
+                  <p className="text-xs text-rose-600 mt-1">{formErrors.subProjectId}</p>
+                )}
               </div>
 
               {/* 預算項目名稱 */}

@@ -147,6 +147,10 @@ function doPost(e) {
         resultData = handleGetBillingPeriodReport(payload);
         break;
 
+      case 'getAnnualBillingReport':
+        resultData = handleGetAnnualBillingReport(payload);
+        break;
+
       case 'listMonthlyClaims':
         resultData = handleListMonthlyClaims(payload);
         break;

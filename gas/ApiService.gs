@@ -514,7 +514,7 @@ function handleSaveBudgetItem(payload) {
     }
 
     var nextBudgetStatus = payload.status || existingObj.status || 'active';
-    if (isActiveStatus(nextBudgetStatus) && (!isActiveStatus(authoritativeProject.status) || (subProject && !isActiveStatus(subProject.status)))) throw createApiError('VALIDATION_ERROR', '上層專案或分案已結案，不可重新啟用預算項目');
+    if (isActiveStatus(nextBudgetStatus) && (isClosedStatus(authoritativeProject.status) || (subProject && isClosedStatus(subProject.status)))) throw createApiError('VALIDATION_ERROR', '上層專案或分案已結案，不可重新啟用預算項目');
     var updatedObj = {
       budgetItemId: existingObj.budgetItemId,
       year: String(year),
@@ -538,7 +538,8 @@ function handleSaveBudgetItem(payload) {
     return updatedObj;
   } else {
     // 新增預算項目
-    if (!isActiveStatus(authoritativeProject.status) || !subProject || !isActiveStatus(subProject.status)) throw createApiError('VALIDATION_ERROR', '上層專案或分案已結案，不可新增預算項目');
+    if (isClosedStatus(authoritativeProject.status)) throw createApiError('VALIDATION_ERROR', '上層專案已結案，不可新增預算項目');
+    if (subProject && isClosedStatus(subProject.status)) throw createApiError('VALIDATION_ERROR', '上層分案已結案，不可新增預算項目');
     var newBudgetItemId = getNextId(ID_TYPES.BUDGET, year);
     var newBudgetItemObj = {
       budgetItemId: newBudgetItemId,
@@ -547,7 +548,7 @@ function handleSaveBudgetItem(payload) {
       company: authoritativeProject.company,
       projectName: authoritativeProject.projectName,
       subProjectId: subProjectId,
-      subProjectName: subProject.subProjectName,
+      subProjectName: subProject ? subProject.subProjectName : (payload.subProjectName ? String(payload.subProjectName).trim() : ''),
       itemName: String(payload.itemName).trim(),
       vendorId: payload.vendorId ? String(payload.vendorId).trim() : '',
       vendorName: payload.vendorName ? String(payload.vendorName).trim() : '',
@@ -580,6 +581,7 @@ function toIsoDate(value) {
 }
 
 function isActiveStatus(status) { return String(status || 'active').toLowerCase() === 'active'; }
+function isClosedStatus(status) { return String(status || '').toLowerCase() === 'closed'; }
 
 function listConfiguredYears(masterSs) {
   var years = [getCurrentYear()];
@@ -616,15 +618,17 @@ function parseIsoDate(iso) {
 }
 
 function validateBillingRuleInput(payload) {
-  var submission = Number(payload.submissionDay);
-  var paymentOffset = Number(payload.paymentMonthOffset);
-  var paymentDay = Number(payload.paymentDay);
+  var cutoff = Number(payload.cutoffDay !== undefined && payload.cutoffDay !== null ? payload.cutoffDay : 20);
+  var submission = Number(payload.submissionDay !== undefined && payload.submissionDay !== null ? payload.submissionDay : 20);
+  var paymentOffset = Number(payload.paymentMonthOffset !== undefined && payload.paymentMonthOffset !== null ? payload.paymentMonthOffset : 1);
+  var paymentDay = Number(payload.paymentDay !== undefined && payload.paymentDay !== null ? payload.paymentDay : 15);
   var effectiveFrom = toIsoDate(payload.effectiveFrom);
   if (!effectiveFrom) throw createApiError('VALIDATION_ERROR', '新規則生效日為必填欄位');
+  if (!Number.isInteger(cutoff) || cutoff < 1 || cutoff > 28) throw createApiError('VALIDATION_ERROR', '結算截止日必須介於 1 至 28 日');
   if (!Number.isInteger(submission) || submission < 1 || submission > 28) throw createApiError('VALIDATION_ERROR', '送件日必須介於 1 至 28 日');
   if (!Number.isInteger(paymentOffset) || paymentOffset < 0 || paymentOffset > 12) throw createApiError('VALIDATION_ERROR', '付款月份必須為本月至 12 個月後');
   if (!Number.isInteger(paymentDay) || paymentDay < 1 || paymentDay > 28) throw createApiError('VALIDATION_ERROR', '付款日必須介於 1 至 28 日');
-  return { effectiveFrom: effectiveFrom, submissionDay: submission, paymentMonthOffset: paymentOffset, paymentDay: paymentDay };
+  return { effectiveFrom: effectiveFrom, cutoffDay: cutoff, submissionDay: submission, paymentMonthOffset: paymentOffset, paymentDay: paymentDay };
 }
 
 function listBillingCycleRulesInternal(masterSs) {
@@ -641,7 +645,7 @@ function ensureDefaultBillingRule(masterSs) {
   var rules = listBillingCycleRulesInternal(masterSs);
   if (rules.length) return rules;
   var sheet = masterSs.getSheetByName(SHEETS.BILLING_CYCLE_RULES);
-  var rule = { ruleId: 'BCR-DEFAULT', effectiveFrom: '1970-01-01', submissionDay: 20, paymentMonthOffset: 1, paymentDay: 15, createdAt: getCurrentTimestamp(), updatedAt: getCurrentTimestamp() };
+  var rule = { ruleId: 'BCR-DEFAULT', effectiveFrom: '1970-01-01', cutoffDay: 20, submissionDay: 20, paymentMonthOffset: 1, paymentDay: 15, createdAt: getCurrentTimestamp(), updatedAt: getCurrentTimestamp() };
   sheet.appendRow(objectToRow(SHEETS.BILLING_CYCLE_RULES, rule));
   return [rule];
 }
@@ -649,18 +653,52 @@ function ensureDefaultBillingRule(masterSs) {
 function calculateBillingPeriodSnapshot(claimDate, rule) {
   var date = parseIsoDate(toIsoDate(claimDate));
   if (!date) throw createApiError('VALIDATION_ERROR', '請款日期必須為合法日期');
-  var endYear = date.getFullYear();
-  var endMonth = date.getMonth();
-  var periodEnd = isoDateFromParts(endYear, endMonth + 1, 0);
-  var periodStart = isoDateFromParts(endYear, endMonth, 1);
-  var submissionDate = isoDateFromParts(endYear, endMonth, Number(rule.submissionDay));
-  var expectedPaymentDate = isoDateFromParts(endYear, endMonth + Number(rule.paymentMonthOffset), Number(rule.paymentDay));
+  var cutoff = (rule && rule.cutoffDay !== undefined && rule.cutoffDay !== null && !isNaN(Number(rule.cutoffDay))) ? Number(rule.cutoffDay) : 20;
+  var submission = (rule && rule.submissionDay !== undefined && rule.submissionDay !== null && !isNaN(Number(rule.submissionDay))) ? Number(rule.submissionDay) : 20;
+  var paymentOffset = (rule && rule.paymentMonthOffset !== undefined && rule.paymentMonthOffset !== null && !isNaN(Number(rule.paymentMonthOffset))) ? Number(rule.paymentMonthOffset) : 1;
+  var paymentD = (rule && rule.paymentDay !== undefined && rule.paymentDay !== null && !isNaN(Number(rule.paymentDay))) ? Number(rule.paymentDay) : 15;
+
+  var dYear = date.getFullYear();
+  var dMonth = date.getMonth(); // 0-based
+  var dDay = date.getDate();
+
+  var periodYear, periodMonth;
+  if (dDay <= cutoff) {
+    periodYear = dYear;
+    periodMonth = dMonth + 1; // 1-based
+  } else {
+    if (dMonth === 11) {
+      periodYear = dYear + 1;
+      periodMonth = 1;
+    } else {
+      periodYear = dYear;
+      periodMonth = dMonth + 2;
+    }
+  }
+
+  var prevYear, prevMonth;
+  if (periodMonth === 1) {
+    prevYear = periodYear - 1;
+    prevMonth = 12;
+  } else {
+    prevYear = periodYear;
+    prevMonth = periodMonth - 1;
+  }
+
+  var periodStart = isoDateFromParts(prevYear, prevMonth - 1, cutoff + 1);
+  var periodEnd = isoDateFromParts(periodYear, periodMonth - 1, cutoff);
+  var submissionDate = isoDateFromParts(periodYear, periodMonth - 1, submission);
+  var expectedPaymentDate = isoDateFromParts(periodYear, (periodMonth - 1) + paymentOffset, paymentD);
+
+  if (periodStart > periodEnd) throw createApiError('VALIDATION_ERROR', '請款週期開始日不得晚於截止日');
   if (expectedPaymentDate < submissionDate) throw createApiError('VALIDATION_ERROR', '預計付款日不得早於送件日');
+
+  var monthStr = ('0' + periodMonth).slice(-2);
   return {
-    billingPeriodId: 'BPR-' + endYear + ('0' + (endMonth + 1)).slice(-2),
-    claimPeriodKey: endYear + '-' + ('0' + (endMonth + 1)).slice(-2),
+    billingPeriodId: 'BPR-' + periodYear + monthStr,
+    claimPeriodKey: periodYear + '-' + monthStr,
     ruleId: rule.ruleId,
-    periodName: endYear + ' 年 ' + (endMonth + 1) + ' 月請款',
+    periodName: periodYear + ' 年 ' + periodMonth + ' 月請款',
     periodStart: periodStart,
     periodEnd: periodEnd,
     submissionDate: submissionDate,
@@ -706,9 +744,27 @@ function handlePreviewBillingCycleRule(payload) {
   var input = validateBillingRuleInput(payload || {});
   var masterSs = getMasterDatabase();
   var existing = listBillingPeriodsInternal(masterSs);
-  var preview = calculateBillingPeriodSnapshot(input.effectiveFrom, { ruleId: 'PREVIEW', submissionDay: input.submissionDay, paymentMonthOffset: input.paymentMonthOffset, paymentDay: input.paymentDay });
-  var overlaps = existing.filter(function (period) { return rangesOverlap(preview.periodStart, preview.periodEnd, period.periodStart, period.periodEnd); });
-  return { proposed: preview, historicalPeriodsUnchanged: true, existingClaimsUnchanged: true, overlaps: overlaps.map(function (item) { return item.periodName; }), requiresCoverageConfirmation: false, coverageWarning: '' };
+  var preview = calculateBillingPeriodSnapshot(input.effectiveFrom, { ruleId: 'PREVIEW', cutoffDay: input.cutoffDay, submissionDay: input.submissionDay, paymentMonthOffset: input.paymentMonthOffset, paymentDay: input.paymentDay });
+  var overlaps = existing.filter(function (period) { return period.billingPeriodId !== preview.billingPeriodId && rangesOverlap(preview.periodStart, preview.periodEnd, period.periodStart, period.periodEnd); });
+  
+  // 檢查是否有 coverage gap
+  var gapWarning = '';
+  var requiresConfirmation = false;
+  if (existing.length > 0) {
+    var sorted = existing.slice().sort(function (a, b) { return String(a.periodEnd).localeCompare(String(b.periodEnd)); });
+    var lastPeriod = sorted[sorted.length - 1];
+    if (preview.periodStart > lastPeriod.periodEnd) {
+      var dLast = parseIsoDate(lastPeriod.periodEnd);
+      var dNext = parseIsoDate(preview.periodStart);
+      var diffDays = Math.round((dNext.getTime() - dLast.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays > 1) {
+        requiresConfirmation = true;
+        gapWarning = '新規則週期開始日 (' + preview.periodStart + ') 與前一期截止日 (' + lastPeriod.periodEnd + ') 之間存在 ' + (diffDays - 1) + ' 天無期別涵蓋空窗。';
+      }
+    }
+  }
+
+  return { proposed: preview, historicalPeriodsUnchanged: true, existingClaimsUnchanged: true, overlaps: overlaps.map(function (item) { return item.periodName; }), requiresCoverageConfirmation: requiresConfirmation, coverageWarning: gapWarning };
 }
 
 function handleSaveBillingCycleRule(payload) {
@@ -719,25 +775,331 @@ function handleSaveBillingCycleRule(payload) {
   var sheet = masterSs.getSheetByName(SHEETS.BILLING_CYCLE_RULES);
   var sameDate = listBillingCycleRulesInternal(masterSs).filter(function (rule) { return rule.effectiveFrom === input.effectiveFrom; });
   if (sameDate.length) throw createApiError('VALIDATION_ERROR', '同一生效日已有請款週期規則，請改用另一個生效日');
-  var rule = { ruleId: 'BCR-' + input.effectiveFrom.replace(/-/g, ''), effectiveFrom: input.effectiveFrom, submissionDay: input.submissionDay, paymentMonthOffset: input.paymentMonthOffset, paymentDay: input.paymentDay, createdAt: getCurrentTimestamp(), updatedAt: getCurrentTimestamp() };
+  var rule = { ruleId: 'BCR-' + input.effectiveFrom.replace(/-/g, ''), effectiveFrom: input.effectiveFrom, cutoffDay: input.cutoffDay, submissionDay: input.submissionDay, paymentMonthOffset: input.paymentMonthOffset, paymentDay: input.paymentDay, createdAt: getCurrentTimestamp(), updatedAt: getCurrentTimestamp() };
   sheet.appendRow(objectToRow(SHEETS.BILLING_CYCLE_RULES, rule));
   return rule;
+}
+
+/**
+ * 共用 Billing Period 請款聚合核心邏輯
+ * 月表與年表 100% 共用此函式，保證 Annual Total 精確等於所有 Monthly Total 加總。
+ */
+function aggregateBillingPeriodData(period, masterSs) {
+  var pStartYear = Number(String(period.periodStart).slice(0, 4));
+  var pEndYear = Number(String(period.periodEnd).slice(0, 4));
+  var candidateYears = [pStartYear, pEndYear];
+  listConfiguredYears(masterSs).forEach(function (y) {
+    if (candidateYears.indexOf(y) === -1) candidateYears.push(y);
+  });
+
+  var periodForms = [];
+  candidateYears.forEach(function (year) {
+    var ss = getYearDatabase(year);
+    if (!ss) return;
+    var formSheet = ss.getSheetByName(SHEETS.FORMS);
+    if (!formSheet || formSheet.getLastRow() <= 1) return;
+    var rows = formSheet.getRange(2, 1, formSheet.getLastRow() - 1, SCHEMAS[SHEETS.FORMS].columns.length).getValues();
+    rows.forEach(function (r) {
+      var f = rowToObject(SHEETS.FORMS, r);
+      normalizeFormSnapshot(f);
+      if (f.formType !== 'payment_request') return;
+      if (String(f.billingPeriodId || '') === String(period.billingPeriodId) || String(f.claimPeriodKey || '') === String(period.claimPeriodKey)) {
+        var exists = periodForms.some(function (item) { return item.formId === f.formId; });
+        if (!exists) periodForms.push(f);
+      }
+    });
+  });
+
+  // 讀取付款紀錄補齊實際付款日
+  var paymentMap = {};
+  candidateYears.forEach(function (year) {
+    var ss = getYearDatabase(year);
+    if (!ss) return;
+    var paySheet = ss.getSheetByName(SHEETS.PAYMENTS);
+    if (!paySheet || paySheet.getLastRow() <= 1) return;
+    var rows = paySheet.getRange(2, 1, paySheet.getLastRow() - 1, SCHEMAS[SHEETS.PAYMENTS].columns.length).getValues();
+    rows.forEach(function (r) {
+      var p = rowToObject(SHEETS.PAYMENTS, r);
+      if (p.formId) paymentMap[p.formId] = p;
+    });
+  });
+
+  periodForms.forEach(function (f) {
+    if (paymentMap[f.formId]) {
+      f.actualPaymentDate = toIsoDate(paymentMap[f.formId].paymentDate);
+      if (paymentMap[f.formId].status === 'paid' && f.status !== 'paid') {
+        f.status = 'paid';
+      }
+    } else {
+      f.actualPaymentDate = '';
+    }
+  });
+
+  var valid = periodForms.filter(function (f) {
+    var st = String(f.status || '').toLowerCase();
+    return st === 'submitted' || st === 'approved' || st === 'paid';
+  });
+
+  var totalAmount = 0;
+  var paidAmount = 0;
+  var unpaidAmount = 0;
+
+  var projectMap = {};
+  var subProjectMap = {};
+  var budgetItemMap = {};
+  var vendorMap = {};
+  var statusCounts = { draft: { count: 0, amount: 0 }, submitted: { count: 0, amount: 0 }, approved: { count: 0, amount: 0 }, paid: { count: 0, amount: 0 } };
+
+  periodForms.forEach(function (f) {
+    var st = String(f.status || 'draft').toLowerCase();
+    var amt = Number(f.amount) || 0;
+    if (!statusCounts[st]) statusCounts[st] = { count: 0, amount: 0 };
+    statusCounts[st].count++;
+    statusCounts[st].amount += amt;
+  });
+
+  valid.forEach(function (f) {
+    var amt = Number(f.amount) || 0;
+    totalAmount += amt;
+    var st = String(f.status || '').toLowerCase();
+    if (st === 'paid') paidAmount += amt;
+    else unpaidAmount += amt;
+
+    // Project 小計
+    var pName = f.projectName || f.projectId || '未指定專案';
+    var pKey = f.projectId || pName;
+    if (!projectMap[pKey]) projectMap[pKey] = { id: f.projectId || '', name: pName, amount: 0 };
+    projectMap[pKey].amount += amt;
+
+    // SubProject 小計
+    var sName = f.subProjectName || f.subProjectId || '未指定分案';
+    var sKey = f.subProjectId || sName;
+    if (!subProjectMap[sKey]) subProjectMap[sKey] = { id: f.subProjectId || '', name: sName, projectId: f.projectId || '', amount: 0 };
+    subProjectMap[sKey].amount += amt;
+
+    // BudgetItem 小計
+    var bPayload = {};
+    if (f.payloadJson) {
+      try { bPayload = JSON.parse(f.payloadJson); } catch (e) {}
+    }
+    var bName = bPayload.budgetItemName || f.budgetItemId || '未指定預算項目';
+    var bKey = f.budgetItemId || bName;
+    if (!budgetItemMap[bKey]) budgetItemMap[bKey] = { id: f.budgetItemId || '', name: bName, subProjectId: f.subProjectId || '', amount: 0 };
+    budgetItemMap[bKey].amount += amt;
+
+    // Vendor 小計
+    var vName = f.vendorName || f.vendorId || '未指定廠商';
+    var vKey = f.vendorId || vName;
+    if (!vendorMap[vKey]) vendorMap[vKey] = { id: f.vendorId || '', name: vName, amount: 0 };
+    vendorMap[vKey].amount += amt;
+  });
+
+  return {
+    period: period,
+    rows: periodForms,
+    claimCount: valid.length,
+    totalAmount: totalAmount,
+    paidAmount: paidAmount,
+    unpaidAmount: unpaidAmount,
+    statusCounts: statusCounts,
+    projectSubtotals: Object.keys(projectMap).map(function (k) { return projectMap[k]; }),
+    subProjectSubtotals: Object.keys(subProjectMap).map(function (k) { return subProjectMap[k]; }),
+    budgetItemSubtotals: Object.keys(budgetItemMap).map(function (k) { return budgetItemMap[k]; }),
+    vendorSubtotals: Object.keys(vendorMap).map(function (k) { return vendorMap[k]; }),
+  };
 }
 
 function handleGetBillingPeriodReport(payload) {
   var periodId = payload && payload.billingPeriodId ? String(payload.billingPeriodId) : '';
   var periodKey = payload && payload.claimPeriodKey ? String(payload.claimPeriodKey) : '';
-  var year = payload && payload.year ? Number(payload.year) : getCurrentYear();
   if (!periodId && !periodKey) throw createApiError('VALIDATION_ERROR', '請款期別為必填欄位');
-  var period = listBillingPeriodsInternal(getMasterDatabase()).filter(function (item) { return item.billingPeriodId === periodId || item.claimPeriodKey === periodKey; })[0];
-  if (!period) throw createApiError('NOT_FOUND', '找不到請款期別');
-  var forms = handleListForms({ year: year, formType: 'payment_request' }).filter(function (form) { return String(form.billingPeriodId || '') === String(period.billingPeriodId); });
-  var valid = forms.filter(function (form) { var status = String(form.status || '').toLowerCase(); return status === 'submitted' || status === 'approved' || status === 'paid'; });
-  function sumBy(key) { var map = {}; valid.forEach(function (form) { var name = form[key] || '未指定'; map[name] = (map[name] || 0) + (Number(form.amount) || 0); }); return Object.keys(map).map(function (name) { return { name: name, amount: map[name] }; }); }
-  return { period: period, rows: forms, claimCount: valid.length, totalAmount: valid.reduce(function (sum, form) { return sum + (Number(form.amount) || 0); }, 0), projectSubtotals: sumBy('projectName'), subProjectSubtotals: sumBy('subProjectName'), vendorSubtotals: sumBy('vendorName') };
+  var masterSs = getMasterDatabase();
+  var period = listBillingPeriodsInternal(masterSs).filter(function (item) { return item.billingPeriodId === periodId || item.claimPeriodKey === periodKey; })[0];
+  if (!period) {
+    if (periodKey && /^\d{4}-\d{2}$/.test(periodKey)) {
+      var parts = periodKey.split('-');
+      var pYear = parseInt(parts[0], 10);
+      var pMonth = parseInt(parts[1], 10);
+      var rules = ensureDefaultBillingRule(masterSs);
+      var testDate = pYear + '-' + (pMonth < 10 ? '0' + pMonth : pMonth) + '-10';
+      var snap = calculateBillingPeriodSnapshot(testDate, rules);
+      period = {
+        billingPeriodId: 'BP-' + periodKey,
+        claimPeriodKey: periodKey,
+        periodName: snap.periodName,
+        periodStart: snap.periodStart,
+        periodEnd: snap.periodEnd,
+        submissionDate: snap.submissionDate,
+        expectedPaymentDate: snap.expectedPaymentDate,
+      };
+    } else {
+      throw createApiError('NOT_FOUND', '找不到請款期別');
+    }
+  }
+  return aggregateBillingPeriodData(period, masterSs);
 }
 
 function handleListMonthlyClaims(payload) { return handleGetBillingPeriodReport(payload); }
+
+/**
+ * 取得年度請款總表（以 Billing Period 為基礎彙總，保證年表與月表完全一致）
+ */
+function handleGetAnnualBillingReport(payload) {
+  var year = payload && payload.year ? Number(payload.year) : getCurrentYear();
+  var startMonth = (payload && payload.startMonth !== undefined && payload.startMonth !== null) ? Number(payload.startMonth) : 1;
+  var endMonth = (payload && payload.endMonth !== undefined && payload.endMonth !== null) ? Number(payload.endMonth) : 12;
+
+  if (!Number.isInteger(startMonth) || startMonth < 1 || startMonth > 12) {
+    throw createApiError('VALIDATION_ERROR', '開始期別月份必須介於 1 至 12 月');
+  }
+  if (!Number.isInteger(endMonth) || endMonth < 1 || endMonth > 12) {
+    throw createApiError('VALIDATION_ERROR', '結束期別月份必須介於 1 至 12 月');
+  }
+  if (startMonth > endMonth) {
+    throw createApiError('VALIDATION_ERROR', '開始期別不得晚於結束期別');
+  }
+
+  var masterSs = getMasterDatabase();
+  var rules = ensureDefaultBillingRule(masterSs);
+  var allPeriods = listBillingPeriodsInternal(masterSs);
+
+  var monthlySummaries = [];
+  var totalAmount = 0;
+  var claimCount = 0;
+  var paidAmount = 0;
+  var unpaidAmount = 0;
+  var statusBreakdown = { draft: { count: 0, amount: 0 }, submitted: { count: 0, amount: 0 }, approved: { count: 0, amount: 0 }, paid: { count: 0, amount: 0 } };
+
+  var projectAgg = {};
+  var vendorAgg = {};
+  var budgetItemAgg = {};
+
+  for (var m = startMonth; m <= endMonth; m++) {
+    var periodKey = year + '-' + ('0' + m).slice(-2);
+    var period = allPeriods.filter(function (p) { return p.claimPeriodKey === periodKey; })[0];
+    if (!period) {
+      var sampleDate = isoDateFromParts(year, m - 1, 10);
+      var candidateRules = rules.filter(function (r) { return String(r.effectiveFrom) <= sampleDate; });
+      var applicableRule = candidateRules.length ? candidateRules[candidateRules.length - 1] : rules[0];
+      period = calculateBillingPeriodSnapshot(sampleDate, applicableRule);
+    }
+
+    var mReport = aggregateBillingPeriodData(period, masterSs);
+
+    totalAmount += mReport.totalAmount;
+    claimCount += mReport.claimCount;
+    paidAmount += mReport.paidAmount;
+    unpaidAmount += mReport.unpaidAmount;
+
+    Object.keys(mReport.statusCounts).forEach(function (st) {
+      if (!statusBreakdown[st]) statusBreakdown[st] = { count: 0, amount: 0 };
+      statusBreakdown[st].count += mReport.statusCounts[st].count;
+      statusBreakdown[st].amount += mReport.statusCounts[st].amount;
+    });
+
+    monthlySummaries.push({
+      month: m,
+      claimPeriodKey: periodKey,
+      periodName: period.periodName,
+      periodStart: period.periodStart,
+      periodEnd: period.periodEnd,
+      submissionDate: period.submissionDate,
+      expectedPaymentDate: period.expectedPaymentDate,
+      totalAmount: mReport.totalAmount,
+      claimCount: mReport.claimCount,
+      paidAmount: mReport.paidAmount,
+      unpaidAmount: mReport.unpaidAmount,
+      rows: mReport.rows,
+      projectSubtotals: mReport.projectSubtotals,
+      subProjectSubtotals: mReport.subProjectSubtotals,
+      budgetItemSubtotals: mReport.budgetItemSubtotals,
+      vendorSubtotals: mReport.vendorSubtotals,
+    });
+
+    mReport.projectSubtotals.forEach(function (p) {
+      if (!projectAgg[p.name]) projectAgg[p.name] = { id: p.id, name: p.name, amount: 0 };
+      projectAgg[p.name].amount += p.amount;
+    });
+
+    mReport.vendorSubtotals.forEach(function (v) {
+      if (!vendorAgg[v.name]) vendorAgg[v.name] = { id: v.id, name: v.name, amount: 0 };
+      vendorAgg[v.name].amount += v.amount;
+    });
+
+    mReport.budgetItemSubtotals.forEach(function (b) {
+      if (!budgetItemAgg[b.name]) budgetItemAgg[b.name] = { id: b.id, name: b.name, amount: 0 };
+      budgetItemAgg[b.name].amount += b.amount;
+    });
+  }
+
+  // 組織 Project -> SubProject -> BudgetItem 階層小計（Drill-down）
+  var hierarchy = {};
+  monthlySummaries.forEach(function (ms) {
+    ms.rows.forEach(function (f) {
+      var st = String(f.status || '').toLowerCase();
+      if (st !== 'submitted' && st !== 'approved' && st !== 'paid') return;
+      var amt = Number(f.amount) || 0;
+      var pName = f.projectName || '未指定專案';
+      var sName = f.subProjectName || '未指定分案';
+      var bPayload = {};
+      if (f.payloadJson) { try { bPayload = JSON.parse(f.payloadJson); } catch (e) {} }
+      var bName = bPayload.budgetItemName || f.budgetItemId || '未指定預算項目';
+
+      if (!hierarchy[pName]) hierarchy[pName] = { id: f.projectId || '', name: pName, amount: 0, subProjects: {} };
+      hierarchy[pName].amount += amt;
+
+      if (!hierarchy[pName].subProjects[sName]) hierarchy[pName].subProjects[sName] = { id: f.subProjectId || '', name: sName, amount: 0, budgetItems: {} };
+      hierarchy[pName].subProjects[sName].amount += amt;
+
+      if (!hierarchy[pName].subProjects[sName].budgetItems[bName]) hierarchy[pName].subProjects[sName].budgetItems[bName] = { id: f.budgetItemId || '', name: bName, amount: 0 };
+      hierarchy[pName].subProjects[sName].budgetItems[bName].amount += amt;
+    });
+  });
+
+  var projectHierarchical = Object.keys(hierarchy).map(function (pName) {
+    var pObj = hierarchy[pName];
+    return {
+      id: pObj.id,
+      name: pObj.name,
+      amount: pObj.amount,
+      subProjects: Object.keys(pObj.subProjects).map(function (sName) {
+        var sObj = pObj.subProjects[sName];
+        return {
+          id: sObj.id,
+          name: sObj.name,
+          amount: sObj.amount,
+          budgetItems: Object.keys(sObj.budgetItems).map(function (bName) {
+            return sObj.budgetItems[bName];
+          }),
+        };
+      }),
+    };
+  });
+
+  return {
+    year: year,
+    startMonth: startMonth,
+    endMonth: endMonth,
+    totalAmount: totalAmount,
+    claimCount: claimCount,
+    paidAmount: paidAmount,
+    unpaidAmount: unpaidAmount,
+    statusBreakdown: statusBreakdown,
+    monthlySummaries: monthlySummaries,
+    projectSubtotals: Object.keys(projectAgg).map(function (k) { return projectAgg[k]; }),
+    subProjectSubtotals: monthlySummaries.reduce(function (acc, ms) {
+      ms.subProjectSubtotals.forEach(function (s) {
+        var found = acc.filter(function (x) { return x.name === s.name; })[0];
+        if (found) found.amount += s.amount;
+        else acc.push({ id: s.id, name: s.name, amount: s.amount });
+      });
+      return acc;
+    }, []),
+    budgetItemSubtotals: Object.keys(budgetItemAgg).map(function (k) { return budgetItemAgg[k]; }),
+    vendorSubtotals: Object.keys(vendorAgg).map(function (k) { return vendorAgg[k]; }),
+    projectHierarchy: projectHierarchical,
+  };
+}
 
 function handleGetFinancialSummary(payload) {
   var masterSs = openMasterDatabaseFast();
@@ -748,8 +1110,9 @@ function handleGetFinancialSummary(payload) {
       var item = rowToObject(SHEETS.YEAR_CONFIG, row); var year = Number(item.year); if (year && years.indexOf(year) === -1) years.push(year);
     });
   }
-  var projects = {}; var subProjects = {}; var orphanBudgetItemIds = [];
+  var projects = {}; var subProjects = {}; var budgetItems = {}; var orphanBudgetItemIds = [];
   function ensure(map, id) { if (!map[id]) map[id] = { totalBudget: 0, claimedAmount: 0, remainingBudget: 0 }; return map[id]; }
+  function ensureBudgetItem(map, id) { if (!map[id]) map[id] = { budgetAmount: 0, claimedAmount: 0, remainingBudget: 0 }; return map[id]; }
   years.forEach(function (year) {
     var ss = getYearDatabase(year); if (!ss) return;
     var budgetSheet = ss.getSheetByName(SHEETS.BUDGET_ITEMS);
@@ -757,9 +1120,11 @@ function handleGetFinancialSummary(payload) {
       budgetSheet.getRange(2, 1, budgetSheet.getLastRow() - 1, SCHEMAS[SHEETS.BUDGET_ITEMS].columns.length).getValues().forEach(function (row) {
         var budget = rowToObject(SHEETS.BUDGET_ITEMS, row);
         if (!budget.budgetItemId) return;
+        var bAmount = Number(budget.budgetAmount) || 0;
+        ensureBudgetItem(budgetItems, String(budget.budgetItemId)).budgetAmount += bAmount;
         if (!budget.subProjectId) { orphanBudgetItemIds.push(budget.budgetItemId); return; }
-        ensure(projects, String(budget.projectId)).totalBudget += Number(budget.budgetAmount) || 0;
-        ensure(subProjects, String(budget.subProjectId)).totalBudget += Number(budget.budgetAmount) || 0;
+        ensure(projects, String(budget.projectId)).totalBudget += bAmount;
+        ensure(subProjects, String(budget.subProjectId)).totalBudget += bAmount;
       });
     }
     var formSheet = ss.getSheetByName(SHEETS.FORMS);
@@ -768,6 +1133,7 @@ function handleGetFinancialSummary(payload) {
         var form = rowToObject(SHEETS.FORMS, row); var status = String(form.status || '').toLowerCase();
         if (form.formType !== 'payment_request' || !form.budgetItemId || (status !== 'submitted' && status !== 'approved' && status !== 'paid')) return;
         var amount = Number(form.amount) || 0;
+        ensureBudgetItem(budgetItems, String(form.budgetItemId)).claimedAmount += amount;
         ensure(projects, String(form.projectId)).claimedAmount += amount;
         ensure(subProjects, String(form.subProjectId)).claimedAmount += amount;
       });
@@ -775,7 +1141,8 @@ function handleGetFinancialSummary(payload) {
   });
   Object.keys(projects).forEach(function (id) { projects[id].remainingBudget = projects[id].totalBudget - projects[id].claimedAmount; });
   Object.keys(subProjects).forEach(function (id) { subProjects[id].remainingBudget = subProjects[id].totalBudget - subProjects[id].claimedAmount; });
-  return { projects: projects, subProjects: subProjects, orphanBudgetItemIds: orphanBudgetItemIds };
+  Object.keys(budgetItems).forEach(function (id) { budgetItems[id].remainingBudget = budgetItems[id].budgetAmount - budgetItems[id].claimedAmount; });
+  return { projects: projects, subProjects: subProjects, budgetItems: budgetItems, orphanBudgetItemIds: orphanBudgetItemIds };
 }
 
 // ==========================================
@@ -1021,7 +1388,7 @@ function handleSaveForm(payload) {
     if (formSubRow === -1) throw createApiError('NOT_FOUND', '找不到分案編號: ' + subProjectId);
     var formSub = rowToObject(SHEETS.SUB_PROJECTS, formSubSheet.getRange(formSubRow, 1, 1, SCHEMAS[SHEETS.SUB_PROJECTS].columns.length).getValues()[0]);
     if (String(formSub.projectId) !== String(payload.projectId).trim()) throw createApiError('VALIDATION_ERROR', '請款表單專案與分案不符');
-    if (!formId && (!isActiveStatus(formProject.status) || !isActiveStatus(formSub.status))) throw createApiError('VALIDATION_ERROR', '專案或分案已結案，不可建立新的請款');
+    if (!formId && !isActiveStatus(formProject.status)) throw createApiError('VALIDATION_ERROR', '專案已結案，不可建立新的請款');
     var rawPaymentPayload = payload.payloadJson;
     if (typeof rawPaymentPayload === 'string') { try { rawPaymentPayload = JSON.parse(rawPaymentPayload); } catch (ignore) { rawPaymentPayload = {}; } }
     billingPeriod = getOrCreateBillingPeriod((rawPaymentPayload && rawPaymentPayload.applyDate) || payload.claimDate || toIsoDate(new Date()));
@@ -1141,6 +1508,7 @@ function handleSaveForm(payload) {
 
       var updatedRow = objectToRow(SHEETS.FORMS, updatedObj);
       sheet.getRange(rowIndex, 1, 1, updatedRow.length).setValues([updatedRow]);
+      updatedObj.year = year;
       return updatedObj;
     } else {
       // 新增表單
@@ -1183,6 +1551,7 @@ function handleSaveForm(payload) {
 
       var newRow = objectToRow(SHEETS.FORMS, newFormObj);
       sheet.appendRow(newRow);
+      newFormObj.year = year;
       return newFormObj;
     }
   } finally {
