@@ -45,6 +45,20 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
         fontFamily: '"BiauKai", "DFKai-SB", "PMingLiU", "MingLiU", serif',
       }}
     >
+      {/* 強制鎖定表格所有黑色邊框為1px純黑實線，防止被Tailwind或PDF轉繪引擎透明化或加粗 */}
+      <style>{`
+        #${id} table {
+          border: 1px solid #000000 !important;
+          border-collapse: collapse !important;
+        }
+        #${id} td {
+          border-color: #000000;
+        }
+        #${id} .desc-line-border {
+          border-bottom: 1px solid #cbd5e1 !important;
+          border-right: 1px solid #000000 !important;
+        }
+      `}</style>
       {/* 抬頭 (Row 1-2) */}
       <div className="text-center mb-1">
         <h1 className="text-xl font-bold tracking-wider">{data.company || '昇陽開發實業股份有限公司'}</h1>
@@ -250,15 +264,15 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
             <td colSpan={2} className="border-r border-b border-black p-0.5 text-center font-bold align-middle text-[10px]">累計請款</td>
           </tr>
 
-          {/* Row 17: 預算管理 (Row 17-18) 列高增加至34px以符合母版66pt規範，徹底消除PDF文字切線 */}
-          <tr className="h-[34px]">
+          {/* Row 17: 預算管理 (Row 17-18) 列高設為30px，上下留白充足，徹底消除PDF文字切線 */}
+          <tr className="h-[30px]">
             {/* E17:F18 預算管理 (跨2列) */}
             <td colSpan={2} rowSpan={2} className="border-r border-b border-black p-0 text-center font-bold align-middle">
-              <div className="flex flex-col justify-center items-center h-full text-[10px] leading-tight tracking-widest py-1">
+              <div className="flex flex-col justify-center items-center h-full text-[9px] leading-tight tracking-widest py-1">
                 <span>預</span>
-                <span>算</span>
-                <span>管</span>
-                <span>理</span>
+                <span className="mt-0.5">算</span>
+                <span className="mt-0.5">管</span>
+                <span className="mt-0.5">理</span>
               </div>
             </td>
             {/* G17: 合約金額/預算金額 標題 */}
@@ -271,12 +285,12 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
             </td>
             {/* I17:I18 餘額或超支 (跨2列) */}
             <td rowSpan={2} className="border-r border-b border-black p-0 text-center font-bold align-middle">
-              <div className="flex flex-col justify-center items-center h-full text-[8.5px] leading-tight tracking-tighter py-1">
+              <div className="flex flex-col justify-center items-center h-full text-[8px] leading-tight py-1">
                 <span>餘</span>
-                <span>額</span>
-                <span>或</span>
-                <span>超</span>
-                <span>支</span>
+                <span className="mt-0.5">額</span>
+                <span className="mt-0.5">或</span>
+                <span className="mt-0.5">超</span>
+                <span className="mt-0.5">支</span>
               </div>
             </td>
             {/* J17:L18 餘額數值 (跨2列, 跨3欄) */}
@@ -285,24 +299,24 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
             </td>
             {/* M17:M18 預算查認者 (跨2列) */}
             <td rowSpan={2} className="border-r border-b border-black p-0 text-center font-bold align-middle">
-              <div className="flex flex-col justify-center items-center h-full text-[8.5px] leading-tight tracking-tighter py-1">
+              <div className="flex flex-col justify-center items-center h-full text-[8px] leading-tight py-1">
                 <span>預</span>
-                <span>算</span>
-                <span>查</span>
-                <span>認</span>
-                <span>者</span>
+                <span className="mt-0.5">算</span>
+                <span className="mt-0.5">查</span>
+                <span className="mt-0.5">認</span>
+                <span className="mt-0.5">者</span>
               </div>
             </td>
             {/* N17:S18 預算查認空白簽名欄 (跨2列, 跨6欄，設定 min-w 確保絕對不被擠壓) */}
             <td colSpan={6} rowSpan={2} className="border-r border-b border-black p-0.5 align-middle min-w-[70px]">&nbsp;</td>
             {/* T17:T18 會同驗收者 (跨2列) */}
             <td rowSpan={2} className="border-r border-b border-black p-0 text-center font-bold align-middle">
-              <div className="flex flex-col justify-center items-center h-full text-[8.5px] leading-tight tracking-tighter py-1">
+              <div className="flex flex-col justify-center items-center h-full text-[8px] leading-tight py-1">
                 <span>會</span>
-                <span>同</span>
-                <span>驗</span>
-                <span>收</span>
-                <span>者</span>
+                <span className="mt-0.5">同</span>
+                <span className="mt-0.5">驗</span>
+                <span className="mt-0.5">收</span>
+                <span className="mt-0.5">者</span>
               </div>
             </td>
             {/* U17:X18 主管 (跨2列, 跨4欄，下方純白無任何橫線) */}
@@ -316,7 +330,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
           </tr>
 
           {/* Row 18: 累計實支金額 */}
-          <tr className="h-[34px]">
+          <tr className="h-[30px]">
             <td className="border-r border-b border-black p-0.5 text-center font-bold align-middle text-[10px] leading-tight">
               累計實支<br/>金額
             </td>
@@ -342,13 +356,13 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
                 <span>處</span>
               </div>
             </td>
-            {/* F20:F21 特殊要求 (跨2列) 字級設為7.5px以確保上下留白充裕，絕不卡到邊線 */}
+            {/* F20:F21 特殊要求 (跨2列) 字級設為7.5px，內距留白充裕，絕不卡線 */}
             <td rowSpan={2} className="border-r border-b border-black p-0 text-center font-bold align-middle">
-              <div className="flex flex-col justify-center items-center h-full text-[7.5px] leading-tight tracking-tight py-0.5">
+              <div className="flex flex-col justify-center items-center h-full text-[7.5px] leading-tight py-1">
                 <span>特</span>
-                <span>殊</span>
-                <span>要</span>
-                <span>求</span>
+                <span className="mt-0.5">殊</span>
+                <span className="mt-0.5">要</span>
+                <span className="mt-0.5">求</span>
               </div>
             </td>
             {/* G20: 方塊 */}
@@ -416,7 +430,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
                 <span>明</span>
               </div>
             </td>
-            <td colSpan={18} className="border-r border-black border-b border-b-slate-300 px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
+            <td colSpan={18} className="desc-line-border px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
               {displayLines[0]}
             </td>
           </tr>
@@ -424,7 +438,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
           {/* Row 23-25: 說明行2-4 (右側財務簽章跨列中，無任何橫線滲透) */}
           {[1, 2, 3].map(idx => (
             <tr key={idx} className="h-[23px]">
-              <td colSpan={18} className="border-r border-black border-b border-b-slate-300 px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
+              <td colSpan={18} className="desc-line-border px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
                 {displayLines[idx]}
               </td>
             </tr>
@@ -432,7 +446,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
 
           {/* Row 26: 說明行5 + 總經理 (跨6列) + 總經理簽名空白格 (跨6列，包含最右收邊線 border-r) */}
           <tr className="h-[23px]">
-            <td colSpan={18} className="border-r border-black border-b border-b-slate-300 px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
+            <td colSpan={18} className="desc-line-border px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
               {displayLines[4]}
             </td>
             {/* Y26:Y31 總經理 (跨6列，單一border-r border-b維持全表一致細線) */}
@@ -450,7 +464,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
           {/* Row 27-31: 說明行6-10 (右側總經理簽名格跨列中，無任何橫線滲透) */}
           {[5, 6, 7, 8, 9].map(idx => (
             <tr key={idx} className="h-[23px]">
-              <td colSpan={18} className="border-r border-black border-b border-b-slate-300 px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
+              <td colSpan={18} className="desc-line-border px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
                 {displayLines[idx]}
               </td>
             </tr>
@@ -458,7 +472,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
 
           {/* Row 32: 說明行11 + 董事長 (跨6列) + 董事長簽名空白格 (跨6列，包含最右收邊線 border-r) */}
           <tr className="h-[23px]">
-            <td colSpan={18} className="border-r border-black border-b border-b-slate-300 px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
+            <td colSpan={18} className="desc-line-border px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
               {displayLines[10]}
             </td>
             {/* Y32:Y37 董事長 (跨6列，單一border-r border-b維持全表一致細線) */}
@@ -476,7 +490,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
           {/* Row 33-37: 說明行12-16 (右側董事長簽名格跨列中，無任何橫線滲透) */}
           {[11, 12, 13, 14, 15].map((idx, i) => (
             <tr key={idx} className="h-[23px]">
-              <td colSpan={18} className={`border-r border-black px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words ${i === 4 ? "border-b border-black" : "border-b border-b-slate-300"}`}>
+              <td colSpan={18} className={`px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words ${i === 4 ? "border-r border-b border-black" : "desc-line-border"}`}>
                 {displayLines[idx]}
               </td>
             </tr>

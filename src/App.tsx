@@ -174,13 +174,13 @@ const MainApp: React.FC = () => {
 
     try {
       if (activeTab === 'seal') {
-        const el = document.getElementById('hidden-seal-view');
+        const el = document.getElementById('modal-seal-view') || document.getElementById('hidden-seal-view');
         if (!el) throw new Error('找不到列印渲染容器');
         const baseName = getSealApprovalBaseFilename(sealData.subject, sealData.applyDate, sealData.types);
         const blob = await generatePdfFromElement(el, `${baseName}.pdf`);
         downloadBlob(blob, `${baseName}.pdf`);
       } else if (activeTab === 'payment') {
-        const el = document.getElementById('hidden-payment-view');
+        const el = document.getElementById('modal-payment-view') || document.getElementById('hidden-payment-view');
         if (!el) throw new Error('找不到列印渲染容器');
         const baseName = getPaymentRequestBaseFilename(paymentData.project, paymentData.vendor, paymentData.applyDate);
         const blob = await generatePdfFromElement(el, `${baseName}.pdf`);
@@ -208,7 +208,7 @@ const MainApp: React.FC = () => {
         const excelBlob = await generateSealApprovalExcel(sealData);
         downloadBlob(excelBlob, `${baseName}.xlsm`);
 
-        const el = document.getElementById('hidden-seal-view');
+        const el = document.getElementById('modal-seal-view') || document.getElementById('hidden-seal-view');
         if (el) {
           const pdfBlob = await generatePdfFromElement(el, `${baseName}.pdf`);
           downloadBlob(pdfBlob, `${baseName}.pdf`);
@@ -218,7 +218,7 @@ const MainApp: React.FC = () => {
         const excelBlob = await generatePaymentRequestExcel(paymentData);
         downloadBlob(excelBlob, `${baseName}.xlsx`);
 
-        const el = document.getElementById('hidden-payment-view');
+        const el = document.getElementById('modal-payment-view') || document.getElementById('hidden-payment-view');
         if (el) {
           const pdfBlob = await generatePdfFromElement(el, `${baseName}.pdf`);
           downloadBlob(pdfBlob, `${baseName}.pdf`);
@@ -332,13 +332,13 @@ const MainApp: React.FC = () => {
       const pdfMimeType = 'application/pdf';
 
       if (currentFormType === 'seal') {
-        const el = document.getElementById('hidden-seal-view');
+        const el = document.getElementById('modal-seal-view') || document.getElementById('hidden-seal-view');
         if (!el) throw new Error('找不到用印簽呈列印渲染容器');
         const baseName = getSealApprovalBaseFilename(sealData.subject, sealData.applyDate, sealData.types);
         pdfFileName = `${baseName}.pdf`;
         pdfBlob = await generatePdfFromElement(el, pdfFileName);
       } else {
-        const el = document.getElementById('hidden-payment-view');
+        const el = document.getElementById('modal-payment-view') || document.getElementById('hidden-payment-view');
         if (!el) throw new Error('找不到請款單列印渲染容器');
         const baseName = getPaymentRequestBaseFilename(paymentData.project, paymentData.vendor, paymentData.applyDate);
         pdfFileName = `${baseName}.pdf`;
@@ -716,7 +716,7 @@ const MainApp: React.FC = () => {
       />
 
       {/* 背景隱藏列印容器（用於產生高品質 PDF，不干擾畫面） */}
-      <div className="absolute left-[-9999px] top-[-9999px] w-[820px] bg-white">
+      <div className="fixed left-0 top-0 w-[820px] bg-white pointer-events-none opacity-0 -z-50">
         <div ref={sealPdfRef}>
           <SealApprovalView data={sealData} id="hidden-seal-view" />
         </div>

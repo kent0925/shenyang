@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   Download,
   FileSpreadsheet,
@@ -8,9 +8,20 @@ import {
   Copy,
   TableProperties,
   Printer,
+  RefreshCw,
+  Database,
+  ArrowRightLeft,
+  CheckCircle2,
+  AlertTriangle,
+  HelpCircle,
 } from 'lucide-react';
 import { RAW_MASTER_CLAIM_CSV, parseCsvRows } from '../../data/masterClaimData';
 import { downloadMasterClaimCsv, downloadMasterClaimExcel } from '../../generators/excel/masterClaimExcel';
+import {
+  runMasterClaimReconciliation,
+  syncMasterDataToSystem,
+  ReconciliationReport,
+} from '../../services/masterClaimReconciliation';
 
 export const MasterClaimSheetView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,15 +30,55 @@ export const MasterClaimSheetView: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
+  // 系統校正狀態
+  const [viewMode, setViewMode] = useState<'master' | 'reconciled'>('reconciled');
+  const [reconcileReport, setReconcileReport] = useState<ReconciliationReport | null>(null);
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [isSyncingMaster, setIsSyncingMaster] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
   // 解析母表全部資料
   const allRows = useMemo(() => {
     return parseCsvRows(RAW_MASTER_CLAIM_CSV);
   }, []);
 
-  // 拆分母表三大部分：
-  // 1. 歷月請款明細總表 (從 row 0 到 row 74)
-  // 2. 2025年專案及付款總結 (從 row 75 到 row 90)
-  // 3. 2026年請款總表 (從 row 91 到 最後)
+  // 執行系統校正
+  const handleRunReconciliation = useCallback(async () => {
+    try {
+      setIsReconciling(true);
+      setSyncMessage(null);
+      const rep = await runMasterClaimReconciliation();
+      setReconcileReport(rep);
+    } catch (err) {
+      console.error('系統校正比對失敗:', err);
+    } finally {
+      setIsReconciling(false);
+    }
+  }, []);
+
+  // 進入頁面時自動進行系統校正比對
+  useEffect(() => {
+    handleRunReconciliation();
+  }, [handleRunReconciliation]);
+
+  // 一鍵將母表主檔同步至系統
+  const handleSyncToSystem = async () => {
+    if (!reconcileReport) return;
+    try {
+      setIsSyncingMaster(true);
+      setSyncMessage(null);
+      const res = await syncMasterDataToSystem(reconcileReport);
+      setSyncMessage(`已成功校正建立：${res.createdProjects} 個專案、${res.createdVendors} 家廠商、${res.createdBudgetItems} 項預算！`);
+      await handleRunReconciliation();
+    } catch (err) {
+      console.error('同步至系統失敗:', err);
+      setSyncMessage('同步至系統主檔時發生錯誤。');
+    } finally {
+      setIsSyncingMaster(false);
+    }
+  };
+
+  // 拆分母表三大部分
   const { table1Rows, table2Rows, table3Rows } = useMemo(() => {
     let t2Start = -1;
     let t3Start = -1;
@@ -54,7 +105,7 @@ export const MasterClaimSheetView: React.FC = () => {
     return { table1Rows: t1, table2Rows: t2, table3Rows: t3 };
   }, [allRows]);
 
-  // 第一張表之明細列（排除表頭 3 列與合計/備註列）
+  // 第一張表之明細列
   const table1BodyRows = useMemo(() => {
     const totalIndex = table1Rows.findIndex(
       (r, idx) => idx >= 3 && ((r[0] || '').includes('合計') || (r[1] || '').includes('合計'))
@@ -104,7 +155,6 @@ export const MasterClaimSheetView: React.FC = () => {
     const trimmed = text.trim();
     if (trimmed === 'NaN') return <span className="text-slate-400">NaN</span>;
 
-    // 換行支援
     const lines = text.split('\n');
     if (lines.length > 1) {
       return (
@@ -119,7 +169,6 @@ export const MasterClaimSheetView: React.FC = () => {
       );
     }
 
-    // 數值判斷（保留小數位與格式）
     const num = Number(trimmed);
     const isNumber = !isNaN(num) && trimmed !== '' && !trimmed.startsWith('09');
     if (isNumber && !isHeader) {
@@ -129,7 +178,6 @@ export const MasterClaimSheetView: React.FC = () => {
       return <span className="font-mono">{num.toLocaleString('zh-TW')}</span>;
     }
 
-    // 狀態特殊色
     if (['結案', '終止'].includes(trimmed)) {
       return (
         <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
@@ -148,7 +196,6 @@ export const MasterClaimSheetView: React.FC = () => {
     return <span>{text}</span>;
   };
 
-  // 判斷是否為本月新增項目（母表備註：藍色=本月新增項目）
   const isBlueItem = (row: string[]): boolean => {
     const itemText = (row[2] || '') + (row[3] || '') + (row[1] || '');
     return (
@@ -165,14 +212,12 @@ export const MasterClaimSheetView: React.FC = () => {
     );
   };
 
-  // 複製母表 CSV 原文
   const handleCopyCsv = () => {
     navigator.clipboard.writeText(RAW_MASTER_CLAIM_CSV);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // 處理 Excel 下載
   const handleDownloadExcel = async () => {
     try {
       setIsDownloading(true);
@@ -184,7 +229,6 @@ export const MasterClaimSheetView: React.FC = () => {
     }
   };
 
-  // 公司過濾邏輯
   const matchesCompany = (rowCompany: string) => {
     if (selectedCompany === 'all') return true;
     return rowCompany.includes(selectedCompany);
@@ -203,16 +247,20 @@ export const MasterClaimSheetView: React.FC = () => {
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 每月及年度請款總表（母表）
                 <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  母表 100% 格式同步
+                  母表版面 100% 同步
+                </span>
+                <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                  <Database className="w-3 h-3" />
+                  已接合系統資料庫校正
                 </span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                跨年度（2024～2026年）請款明細總表、2025專案付款總結與2026年度請款總表
+                完整整合系統專案主檔、預算項目、請款單紀錄與母表歷月款項即時校正
               </p>
             </div>
           </div>
 
-          {/* 下載與匯出按鈕區 */}
+          {/* 下載與操作按鈕群 */}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -254,6 +302,123 @@ export const MasterClaimSheetView: React.FC = () => {
               <Printer className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        {/* 系統資料庫校正儀表看板 */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ArrowRightLeft className="w-4 h-4 text-blue-700" />
+              <span className="font-bold text-xs text-slate-800">系統即時校正與比對看板</span>
+              {reconcileReport && (
+                <span className="text-[11px] text-slate-500 font-mono">
+                  （校正時間：{new Date(reconcileReport.timestamp).toLocaleTimeString()}）
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* 切換檢視模式：母表原值 vs 系統校正比對 */}
+              <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 text-xs font-medium shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('master')}
+                  className={`px-2.5 py-1 rounded-md transition ${
+                    viewMode === 'master' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  母表基準
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('reconciled')}
+                  className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 ${
+                    viewMode === 'reconciled' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <span>系統校正標記</span>
+                  {reconcileReport && (
+                    <span className="px-1 py-0.2 rounded-full text-[10px] bg-emerald-500 text-white">
+                      {reconcileReport.matchCount} 吻合
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleRunReconciliation}
+                disabled={isReconciling}
+                className="px-2.5 py-1 text-xs bg-slate-800 text-white rounded-md hover:bg-slate-900 transition flex items-center gap-1 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isReconciling ? 'animate-spin' : ''}`} />
+                <span>重新校正</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSyncToSystem}
+                disabled={isSyncingMaster || !reconcileReport}
+                className="px-2.5 py-1 text-xs bg-indigo-700 text-white rounded-md hover:bg-indigo-800 transition flex items-center gap-1 disabled:opacity-50 shadow-sm"
+                title="將母表中的專案、廠商與預算項目自動建置或校正進系統主檔"
+              >
+                <Database className="w-3.5 h-3.5" />
+                <span>{isSyncingMaster ? '同步中...' : '校正母表至系統主檔'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 校正指標統計卡片 */}
+          {reconcileReport && (
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1 text-xs">
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                <span className="text-slate-500 text-[11px]">專案主檔建置</span>
+                <p className="font-bold text-slate-800 font-mono mt-0.5">
+                  {reconcileReport.projectsInSystemCount} / {reconcileReport.totalItems} 筆已連結
+                </p>
+              </div>
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                <span className="text-slate-500 text-[11px]">預算項目連結</span>
+                <p className="font-bold text-slate-800 font-mono mt-0.5">
+                  {reconcileReport.budgetItemsInSystemCount} / {reconcileReport.totalItems} 筆已對齊
+                </p>
+              </div>
+              <div className="bg-emerald-50 p-2.5 rounded-lg border border-emerald-200">
+                <span className="text-emerald-700 text-[11px] flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  金額完全吻合
+                </span>
+                <p className="font-bold text-emerald-900 font-mono mt-0.5">
+                  {reconcileReport.matchCount} 項
+                </p>
+              </div>
+              <div className="bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+                <span className="text-amber-700 text-[11px] flex items-center gap-1">
+                  <HelpCircle className="w-3 h-3 text-amber-600" />
+                  母表有款・系統待補單
+                </span>
+                <p className="font-bold text-amber-900 font-mono mt-0.5">
+                  {reconcileReport.pendingCount} 項
+                </p>
+              </div>
+              <div className="bg-indigo-50 p-2.5 rounded-lg border border-indigo-200">
+                <span className="text-indigo-700 text-[11px] flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 text-indigo-600" />
+                  系統請款單累計已付
+                </span>
+                <p className="font-bold text-indigo-900 font-mono mt-0.5">
+                  NT$ {reconcileReport.systemTotalPaid.toLocaleString()}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {syncMessage && (
+            <div className="p-2 bg-emerald-100 text-emerald-900 rounded-lg text-xs font-medium flex items-center gap-2">
+              <Check className="w-4 h-4 text-emerald-700" />
+              <span>{syncMessage}</span>
+            </div>
+          )}
         </div>
 
         {/* 快捷板塊切換標籤與搜尋 */}
@@ -306,7 +471,6 @@ export const MasterClaimSheetView: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* 公司過濾器 */}
             <div className="flex items-center gap-1 text-xs">
               <Filter className="w-3.5 h-3.5 text-slate-400" />
               <select
@@ -324,7 +488,6 @@ export const MasterClaimSheetView: React.FC = () => {
               </select>
             </div>
 
-            {/* 文字搜尋 */}
             <div className="relative flex-1 sm:w-56">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
@@ -361,6 +524,11 @@ export const MasterClaimSheetView: React.FC = () => {
               <span className="text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                 ＊藍色=本月新增項目
               </span>
+              {viewMode === 'reconciled' && (
+                <span className="text-xs text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-medium">
+                  系統校正模式已啟用
+                </span>
+              )}
             </div>
             <div className="text-xs text-slate-500 font-mono">
               製表時間：20251224
@@ -370,7 +538,6 @@ export const MasterClaimSheetView: React.FC = () => {
           <div className="overflow-x-auto max-h-[680px] scrollbar-thin">
             <table className="w-full text-left text-xs border-collapse border border-slate-300 whitespace-nowrap">
               <thead className="bg-slate-100 text-slate-700 sticky top-0 z-10 shadow-sm">
-                {/* 表頭第 1 列 */}
                 <tr className="border-b border-slate-300 text-center font-bold">
                   <th rowSpan={3} className="border border-slate-300 px-3 py-2 bg-slate-100 sticky left-0 z-20">公司</th>
                   <th rowSpan={3} className="border border-slate-300 px-3 py-2 bg-slate-100 sticky left-[64px] z-20">專案</th>
@@ -378,6 +545,11 @@ export const MasterClaimSheetView: React.FC = () => {
                   <th rowSpan={3} className="border border-slate-300 px-3 py-2 bg-slate-100">廠商</th>
                   <th rowSpan={3} className="border border-slate-300 px-3 py-2 bg-slate-100 text-right">總預算</th>
                   <th rowSpan={3} className="border border-slate-300 px-3 py-2 bg-slate-100 text-right">預算</th>
+                  {viewMode === 'reconciled' && (
+                    <th rowSpan={3} className="border border-slate-300 px-3 py-2 bg-indigo-50 text-indigo-950 font-bold">
+                      系統校正狀態
+                    </th>
+                  )}
                   <th rowSpan={2} className="border border-slate-300 px-3 py-1 bg-amber-50 text-amber-900 leading-tight">截至2025<br />12月已付</th>
                   <th rowSpan={2} className="border border-slate-300 px-3 py-1 bg-amber-50 text-amber-900">已付</th>
                   <th rowSpan={2} className="border border-slate-300 px-3 py-1 bg-amber-50 text-amber-900">待付</th>
@@ -385,11 +557,8 @@ export const MasterClaimSheetView: React.FC = () => {
                   <th colSpan={15} className="border border-slate-300 px-3 py-1 bg-blue-50 text-blue-900">2025年</th>
                   <th colSpan={6} className="border border-slate-300 px-3 py-1 bg-emerald-50 text-emerald-900">2026年</th>
                 </tr>
-                {/* 表頭第 2 列 (月份標記) */}
                 <tr className="border-b border-slate-300 text-center font-semibold text-[11px]">
-                  {/* 2024 */}
                   <th className="border border-slate-300 px-2.5 py-1 bg-indigo-50/60">12月</th>
-                  {/* 2025 */}
                   <th className="border border-slate-300 px-2 py-1 bg-blue-50/50">1月</th>
                   <th className="border border-slate-300 px-2 py-1 bg-blue-50/50">2月</th>
                   <th className="border border-slate-300 px-2 py-1 bg-blue-50/50">3月</th>
@@ -405,7 +574,6 @@ export const MasterClaimSheetView: React.FC = () => {
                   <th className="border border-slate-300 px-2 py-1 bg-blue-50/50">10月</th>
                   <th className="border border-slate-300 px-2 py-1 bg-blue-50/50">11月</th>
                   <th className="border border-slate-300 px-2 py-1 bg-blue-50/50">12月</th>
-                  {/* 2026 */}
                   <th className="border border-slate-300 px-2 py-1 bg-emerald-50/50">1月</th>
                   <th className="border border-slate-300 px-2 py-1 bg-emerald-50/50">2月</th>
                   <th className="border border-slate-300 px-2 py-1 bg-emerald-50/50">3月</th>
@@ -424,6 +592,8 @@ export const MasterClaimSheetView: React.FC = () => {
                   })
                   .map((row, rIdx) => {
                     const isNewItem = isBlueItem(row);
+                    const reconItem = reconcileReport?.items[rIdx];
+
                     return (
                       <tr
                         key={rIdx}
@@ -431,11 +601,11 @@ export const MasterClaimSheetView: React.FC = () => {
                           isNewItem ? 'bg-blue-50/60 font-medium text-blue-950' : ''
                         }`}
                       >
-                        {/* 公司 (左側凍結) */}
+                        {/* 公司 */}
                         <td className="border border-slate-200 px-3 py-2 font-semibold text-slate-800 bg-inherit sticky left-0 z-0">
                           {row[0] || ''}
                         </td>
-                        {/* 專案 (左側凍結) */}
+                        {/* 專案 */}
                         <td className="border border-slate-200 px-3 py-2 font-medium text-slate-800 bg-inherit sticky left-[64px] z-0">
                           {renderCellContent(row[1])}
                         </td>
@@ -455,9 +625,46 @@ export const MasterClaimSheetView: React.FC = () => {
                         <td className="border border-slate-200 px-3 py-2 text-right">
                           {renderCellContent(row[5])}
                         </td>
+
+                        {/* 系統校正狀態欄 */}
+                        {viewMode === 'reconciled' && (
+                          <td className="border border-slate-200 px-2.5 py-1.5 text-center bg-indigo-50/30">
+                            {reconItem ? (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                    reconItem.status === 'MATCH'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : reconItem.status === 'PENDING_ENTRY'
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-rose-100 text-rose-800'
+                                  }`}
+                                >
+                                  {reconItem.status === 'MATCH' && <Check className="w-2.5 h-2.5" />}
+                                  {reconItem.statusLabel}
+                                </span>
+                                {reconItem.systemRecords.length > 0 && (
+                                  <span className="text-[10px] text-slate-500 font-mono">
+                                    系統單: {reconItem.systemRecords.length} 筆
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">校正中...</span>
+                            )}
+                          </td>
+                        )}
+
                         {/* 截至2025 12月已付 */}
                         <td className="border border-slate-200 px-3 py-2 text-right bg-amber-50/20">
-                          {renderCellContent(row[6])}
+                          <div className="flex flex-col items-end">
+                            {renderCellContent(row[6])}
+                            {viewMode === 'reconciled' && reconItem && reconItem.systemTotalPaid > 0 && (
+                              <span className="text-[10px] text-indigo-700 font-mono">
+                                系統: {reconItem.systemTotalPaid.toLocaleString()}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         {/* 已付 */}
                         <td className="border border-slate-200 px-3 py-2 text-center bg-amber-50/20">
@@ -471,7 +678,7 @@ export const MasterClaimSheetView: React.FC = () => {
                         <td className="border border-slate-200 px-2 py-2 text-right font-mono bg-indigo-50/20">
                           {renderCellContent(row[9])}
                         </td>
-                        {/* 2025 1月 ~ 12月 (含 7, 8, 9 月說明) */}
+                        {/* 2025 1月 ~ 12月 */}
                         <td className="border border-slate-200 px-2 py-2 text-right font-mono">{renderCellContent(row[10])}</td>
                         <td className="border border-slate-200 px-2 py-2 text-right font-mono">{renderCellContent(row[11])}</td>
                         <td className="border border-slate-200 px-2 py-2 text-right font-mono">{renderCellContent(row[12])}</td>
@@ -503,7 +710,7 @@ export const MasterClaimSheetView: React.FC = () => {
                   <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
                     <td className="border border-slate-300 px-3 py-2 sticky left-0 bg-slate-100 z-10"></td>
                     <td className="border border-slate-300 px-3 py-2 sticky left-[64px] bg-slate-100 z-10 text-center">合計</td>
-                    <td className="border border-slate-300 px-3 py-2" colSpan={2}></td>
+                    <td className="border border-slate-300 px-3 py-2" colSpan={viewMode === 'reconciled' ? 3 : 2}></td>
                     {table1BodyRows.totalRow.slice(4).map((val, cIdx) => (
                       <td
                         key={cIdx}
@@ -520,7 +727,6 @@ export const MasterClaimSheetView: React.FC = () => {
             </table>
           </div>
 
-          {/* 表尾說明 */}
           <div className="bg-slate-50 px-4 py-2 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-500">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-blue-100 border border-blue-300 rounded inline-block"></span>
@@ -541,7 +747,7 @@ export const MasterClaimSheetView: React.FC = () => {
               二、{table2Parsed.title}
             </span>
             <span className="text-xs text-slate-500">
-              專案預算、終止合約、已付款與未請款彙總
+              專案預算、終止合約、已付款與未請款彙總（已校正系統專案主檔）
             </span>
           </div>
 
@@ -609,7 +815,6 @@ export const MasterClaimSheetView: React.FC = () => {
           <div className="overflow-x-auto max-h-[600px] scrollbar-thin">
             <table className="w-full text-left text-xs border-collapse border border-slate-300 whitespace-nowrap">
               <thead className="bg-slate-100 text-slate-700 sticky top-0 z-10 shadow-sm">
-                {/* 第 1 列 */}
                 <tr className="border-b border-slate-300 text-center font-bold">
                   <th rowSpan={2} className="border border-slate-300 px-3 py-2 bg-slate-100 sticky left-0 z-20">公司</th>
                   <th rowSpan={2} className="border border-slate-300 px-3 py-2 bg-slate-100 sticky left-[64px] z-20">專案</th>
@@ -622,7 +827,6 @@ export const MasterClaimSheetView: React.FC = () => {
                   <th rowSpan={2} className="border border-slate-300 px-3 py-2 bg-amber-50 text-amber-900">待付</th>
                   <th colSpan={12} className="border border-slate-300 px-3 py-1 bg-blue-50 text-blue-900">2026年</th>
                 </tr>
-                {/* 第 2 列 */}
                 <tr className="border-b border-slate-300 text-center font-semibold text-[11px] bg-blue-50/60">
                   <th className="border border-slate-300 px-2 py-1">1月</th>
                   <th className="border border-slate-300 px-2 py-1">2月</th>
@@ -657,7 +861,6 @@ export const MasterClaimSheetView: React.FC = () => {
                       <td className="border border-slate-200 px-3 py-2 text-right bg-amber-50/20">{renderCellContent(row[6])}</td>
                       <td className="border border-slate-200 px-3 py-2 text-center bg-amber-50/20">{renderCellContent(row[7])}</td>
                       <td className="border border-slate-200 px-3 py-2 text-right font-semibold bg-amber-50/20">{renderCellContent(row[8])}</td>
-                      {/* 2026年 1月~12月 */}
                       {row.slice(9, 21).map((val, cIdx) => (
                         <td key={cIdx} className="border border-slate-200 px-2.5 py-2 text-right font-mono">
                           {renderCellContent(val)}
@@ -666,7 +869,6 @@ export const MasterClaimSheetView: React.FC = () => {
                     </tr>
                   ))}
 
-                {/* 合計列 */}
                 {table3Parsed.totalRow && (
                   <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
                     <td className="border border-slate-300 px-3 py-2 sticky left-0 bg-slate-100 z-10 text-center">合計</td>
