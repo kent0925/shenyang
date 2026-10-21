@@ -4,26 +4,71 @@ export function formatBankAccount(
   info?: Partial<BankAccountInfo>,
   data?: Partial<PaymentRequestData>
 ): string {
-  const bankCode = (data?.bankCode || info?.bankCode || '').trim();
+  let bankCode = (data?.bankCode || info?.bankCode || '').trim();
   const bankName = (data?.bankName || info?.bankName || '').trim();
   const branchName = (data?.branchName || info?.branch || '').trim();
   const accountName = (data?.accountName || info?.accountName || '').trim();
-  const accountNumber = (data?.accountNumber || info?.accountNumber || '').trim();
+  let accountNumber = (data?.accountNumber || info?.accountNumber || '').trim();
 
-  const bankParts = [bankCode, bankName, branchName].filter(Boolean).join(' ');
-  const parts: string[] = [];
+  // 1. 銀行代碼都要三碼，若為 0 也要顯示（例如 13 -> 013, 4 -> 004）
+  if (bankCode) {
+    const digitMatch = bankCode.match(/\d+/);
+    if (digitMatch) {
+      const digits = digitMatch[0];
+      if (digits.length <= 3) {
+        bankCode = digits.padStart(3, '0');
+      } else {
+        // 若為 7 碼等分行代碼，前 3 碼為總機構代碼
+        bankCode = digits.slice(0, 3).padStart(3, '0');
+      }
+    }
+  }
 
-  if (bankParts) {
-    parts.push(`金融機構：${bankParts}`);
+  // 2. 帳號前導 0 智慧補齊（例如國泰世華 013 標準為 12 碼，若純數字且為 11 碼則自動補 0）
+  if (accountNumber && /^\d+$/.test(accountNumber)) {
+    if (bankCode === '013' && accountNumber.length === 11) {
+      accountNumber = accountNumber.padStart(12, '0');
+    } else if (bankCode === '004' && accountNumber.length === 11) {
+      accountNumber = accountNumber.padStart(12, '0');
+    } else if (bankCode === '822' && accountNumber.length === 11) {
+      accountNumber = accountNumber.padStart(12, '0');
+    }
+  }
+
+  // 3. 依結構分行呈現：
+  // 第 1 行：(銀行全稱) (代碼)
+  // 第 2 行：分行名 / 戶名
+  // 第 3 行：帳號：
+  const lines: string[] = [];
+
+  let bankLine = '';
+  if (bankName && bankCode) {
+    bankLine = `${bankName} (${bankCode})`;
+  } else if (bankName) {
+    bankLine = bankName;
+  } else if (bankCode) {
+    bankLine = `(${bankCode})`;
+  }
+  if (bankLine) {
+    lines.push(bankLine);
+  }
+
+  const secondLineParts: string[] = [];
+  if (branchName) {
+    secondLineParts.push(branchName);
   }
   if (accountName) {
-    parts.push(`戶名：${accountName}`);
+    secondLineParts.push(`戶名：${accountName}`);
   }
-  if (accountNumber) {
-    parts.push(`帳號：${accountNumber}`);
+  if (secondLineParts.length > 0) {
+    lines.push(secondLineParts.join(' / '));
   }
 
-  return parts.join(' / ');
+  if (accountNumber) {
+    lines.push(`帳號：${accountNumber}`);
+  }
+
+  return lines.join('\n');
 }
 
 export function formatPaymentBankAccount(data: PaymentRequestData): string {
