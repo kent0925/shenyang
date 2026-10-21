@@ -618,8 +618,8 @@ function parseIsoDate(iso) {
 }
 
 function validateBillingRuleInput(payload) {
-  var cutoff = Number(payload.cutoffDay !== undefined && payload.cutoffDay !== null ? payload.cutoffDay : 20);
-  var submission = Number(payload.submissionDay !== undefined && payload.submissionDay !== null ? payload.submissionDay : 20);
+  var cutoff = Number(payload.cutoffDay !== undefined && payload.cutoffDay !== null ? payload.cutoffDay : 25);
+  var submission = Number(payload.submissionDay !== undefined && payload.submissionDay !== null ? payload.submissionDay : 25);
   var paymentOffset = Number(payload.paymentMonthOffset !== undefined && payload.paymentMonthOffset !== null ? payload.paymentMonthOffset : 1);
   var paymentDay = Number(payload.paymentDay !== undefined && payload.paymentDay !== null ? payload.paymentDay : 15);
   var effectiveFrom = toIsoDate(payload.effectiveFrom);
@@ -645,7 +645,7 @@ function ensureDefaultBillingRule(masterSs) {
   var rules = listBillingCycleRulesInternal(masterSs);
   if (rules.length) return rules;
   var sheet = masterSs.getSheetByName(SHEETS.BILLING_CYCLE_RULES);
-  var rule = { ruleId: 'BCR-DEFAULT', effectiveFrom: '1970-01-01', cutoffDay: 20, submissionDay: 20, paymentMonthOffset: 1, paymentDay: 15, createdAt: getCurrentTimestamp(), updatedAt: getCurrentTimestamp() };
+  var rule = { ruleId: 'BCR-DEFAULT', effectiveFrom: '1970-01-01', cutoffDay: 25, submissionDay: 25, paymentMonthOffset: 1, paymentDay: 15, createdAt: getCurrentTimestamp(), updatedAt: getCurrentTimestamp() };
   sheet.appendRow(objectToRow(SHEETS.BILLING_CYCLE_RULES, rule));
   return [rule];
 }
@@ -653,8 +653,8 @@ function ensureDefaultBillingRule(masterSs) {
 function calculateBillingPeriodSnapshot(claimDate, rule) {
   var date = parseIsoDate(toIsoDate(claimDate));
   if (!date) throw createApiError('VALIDATION_ERROR', '請款日期必須為合法日期');
-  var cutoff = (rule && rule.cutoffDay !== undefined && rule.cutoffDay !== null && !isNaN(Number(rule.cutoffDay))) ? Number(rule.cutoffDay) : 20;
-  var submission = (rule && rule.submissionDay !== undefined && rule.submissionDay !== null && !isNaN(Number(rule.submissionDay))) ? Number(rule.submissionDay) : 20;
+  var cutoff = (rule && rule.cutoffDay !== undefined && rule.cutoffDay !== null && !isNaN(Number(rule.cutoffDay))) ? Number(rule.cutoffDay) : 25;
+  var submission = (rule && rule.submissionDay !== undefined && rule.submissionDay !== null && !isNaN(Number(rule.submissionDay))) ? Number(rule.submissionDay) : 25;
   var paymentOffset = (rule && rule.paymentMonthOffset !== undefined && rule.paymentMonthOffset !== null && !isNaN(Number(rule.paymentMonthOffset))) ? Number(rule.paymentMonthOffset) : 1;
   var paymentD = (rule && rule.paymentDay !== undefined && rule.paymentDay !== null && !isNaN(Number(rule.paymentDay))) ? Number(rule.paymentDay) : 15;
 

@@ -26,8 +26,8 @@ import type {
 import { formatCurrency } from '../../utils/format';
 
 const defaultRuleForm: SaveBillingCycleRulePayload = {
-  cutoffDay: 20,
-  submissionDay: 20,
+  cutoffDay: 25,
+  submissionDay: 25,
   paymentMonthOffset: 1,
   paymentDay: 15,
   effectiveFrom: new Date().toISOString().slice(0, 10),
@@ -313,11 +313,11 @@ export const BillingCyclesPanel: React.FC<Props> = ({ focusSection = 'cycle' }) 
                 type="number"
                 min="1"
                 max="28"
-                value={ruleForm.cutoffDay ?? 20}
+                value={ruleForm.cutoffDay ?? 25}
                 onChange={(e) => setRuleForm({ ...ruleForm, cutoffDay: Number(e.target.value) })}
                 className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
-              <span className="text-[11px] text-slate-400 mt-0.5 block">預設 20 日（上月 21 ～ 本月 20）</span>
+              <span className="text-[11px] text-slate-400 mt-0.5 block">預設 25 日（上月 26 ～ 本月 25）</span>
             </label>
 
             <label className="text-xs font-semibold text-slate-700">
@@ -330,7 +330,7 @@ export const BillingCyclesPanel: React.FC<Props> = ({ focusSection = 'cycle' }) 
                 onChange={(e) => setRuleForm({ ...ruleForm, submissionDay: Number(e.target.value) })}
                 className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
-              <span className="text-[11px] text-slate-400 mt-0.5 block">預設 20 日</span>
+              <span className="text-[11px] text-slate-400 mt-0.5 block">預設 25 日</span>
             </label>
 
             <label className="text-xs font-semibold text-slate-700">
@@ -374,13 +374,13 @@ export const BillingCyclesPanel: React.FC<Props> = ({ focusSection = 'cycle' }) 
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1">
             <p className="font-semibold text-slate-700">請款週期規則說明：</p>
             <p>
-              • 預設請款週期為：上月 {(ruleForm.cutoffDay || 20) + 1} 日 ～ 本月 {ruleForm.cutoffDay || 20} 日。
+              • 預設請款週期為：上月 {(ruleForm.cutoffDay || 25) + 1} 日 ～ 本月 {ruleForm.cutoffDay || 25} 日。
             </p>
             <p>
-              • 例如 2026/09/20 屬於 9 月請款（2026/08/21～2026/09/20）；2026/09/21 屬於 10 月請款（2026/09/21～2026/10/20）。
+              • 例如 2026/09/25 屬於 9 月請款（2026/08/26～2026/09/25）；2026/09/26 屬於 10 月請款（2026/09/26～2026/10/25）。
             </p>
             <p>
-              • 跨年判定：2025/12/21～2026/01/20 屬於 2026 年 1 月請款，歸屬於 2026 年度。
+              • 跨年判定：2025/12/26～2026/01/25 屬於 2026 年 1 月請款，歸屬於 2026 年度。
             </p>
           </div>
 

@@ -341,7 +341,7 @@ function rowToObject(sheetName, rowValues) {
     obj[col.key] = (values && values[idx] !== undefined) ? values[idx] : null;
   });
   if (sheetName === '請款週期規則' && (obj.cutoffDay === null || obj.cutoffDay === '' || obj.cutoffDay === undefined)) {
-    obj.cutoffDay = 20;
+    obj.cutoffDay = 25;
   }
   return obj;
 }
