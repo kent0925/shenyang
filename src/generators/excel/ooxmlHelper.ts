@@ -1,4 +1,4 @@
-﻿/**
+/**
  * OOXML XML 操作輔助工具
  * 使用字元索引進行無副作用、精確儲存格定位與替換
  * 徹底解決正則表達式貪婪跨標籤問題，確保相鄰與後續儲存格絕不被誤吞
@@ -18,13 +18,14 @@ export function escapeXml(str: string): string {
  * 精確更新 Sheet XML 中的指定儲存格
  * - 嚴格保護公式儲存格（含有 <f> 則不覆寫）
  * - 絕不吃掉其他儲存格
- * - 支援保留原有樣式 s 屬性
+ * - 支援保留原有樣式 s 屬性，或傳入 styleOverride 覆寫樣式
  */
 export function updateSheetCell(
   sheetXml: string,
   cellRef: string,
   value: string | number | null | undefined,
-  type: 'string' | 'number' = 'string'
+  type: 'string' | 'number' = 'string',
+  styleOverride?: string
 ): string {
   const rAttr = `r="${cellRef}"`;
   const idx = sheetXml.indexOf(rAttr);
@@ -63,11 +64,15 @@ export function updateSheetCell(
     return sheetXml;
   }
 
-  // 提取原有樣式 s=".."
+  // 樣式處理：若有 styleOverride 優先使用，否則提取原有樣式 s=".."
   let styleAttr = '';
-  const sMatch = rawCell.match(/\bs="(\d+)"/);
-  if (sMatch) {
-    styleAttr = ` s="${sMatch[1]}"`;
+  if (styleOverride) {
+    styleAttr = ` s="${styleOverride}"`;
+  } else {
+    const sMatch = rawCell.match(/\bs="(\d+)"/);
+    if (sMatch) {
+      styleAttr = ` s="${sMatch[1]}"`;
+    }
   }
 
   let newCellXml = '';
@@ -85,6 +90,66 @@ export function updateSheetCell(
     newCellXml = `<c r="${cellRef}"${styleAttr} t="inlineStr"><is><t xml:space="preserve">${escaped}</t></is></c>`;
   }
 
+  return sheetXml.substring(0, cellStart) + newCellXml + sheetXml.substring(cellEnd);
+}
+
+/**
+ * 寫入或更新公式儲存格
+ */
+export function updateSheetCellFormula(
+  sheetXml: string,
+  cellRef: string,
+  formula: string,
+  cachedValue?: number | string | null,
+  styleOverride?: string
+): string {
+  const rAttr = `r="${cellRef}"`;
+  const idx = sheetXml.indexOf(rAttr);
+  if (idx === -1) {
+    return sheetXml;
+  }
+
+  const cellStart = sheetXml.lastIndexOf('<c', idx);
+  if (cellStart === -1) return sheetXml;
+
+  const closeSlash = sheetXml.indexOf('/>', idx);
+  const closeTag = sheetXml.indexOf('</c>', idx);
+
+  let cellEnd = -1;
+  let isSelfClosing = false;
+
+  if (closeSlash !== -1 && (closeTag === -1 || closeSlash < closeTag)) {
+    const firstGt = sheetXml.indexOf('>', idx);
+    if (firstGt === closeSlash + 1) {
+      cellEnd = closeSlash + 2;
+      isSelfClosing = true;
+    }
+  }
+
+  if (!isSelfClosing) {
+    if (closeTag === -1) return sheetXml;
+    cellEnd = closeTag + 4;
+  }
+
+  const rawCell = sheetXml.substring(cellStart, cellEnd);
+
+  let styleAttr = '';
+  if (styleOverride) {
+    styleAttr = ` s="${styleOverride}"`;
+  } else {
+    const sMatch = rawCell.match(/\bs="(\d+)"/);
+    if (sMatch) {
+      styleAttr = ` s="${sMatch[1]}"`;
+    }
+  }
+
+  const cleanFormula = formula.startsWith('=') ? formula.substring(1) : formula;
+  let valTag = '';
+  if (cachedValue !== undefined && cachedValue !== null && cachedValue !== '') {
+    valTag = `<v>${cachedValue}</v>`;
+  }
+
+  const newCellXml = `<c r="${cellRef}"${styleAttr}><f>${cleanFormula}</f>${valTag}</c>`;
   return sheetXml.substring(0, cellStart) + newCellXml + sheetXml.substring(cellEnd);
 }
 
