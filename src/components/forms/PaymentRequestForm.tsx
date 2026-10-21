@@ -191,6 +191,19 @@ export const PaymentRequestForm: React.FC<Props> = ({
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // 優先比對既有廠商主檔，若已有建檔資料則直接自動帶入，無需對外請求政府 API
+    const localVendor = vendors.find((v) => (v.taxId || '').trim() === cleanId);
+    if (localVendor && localVendor.vendorName) {
+      lastQueriedTaxIdRef.current = cleanId;
+      setIsSearchingCompany(false);
+      setCompanySearchMsg({
+        type: 'success',
+        text: `✓ 已從廠商主檔自動帶入：${localVendor.vendorName}`,
+      });
+      handleSelectVendorFromMaster(localVendor.vendorId);
+      return;
+    }
+
     setIsSearchingCompany(true);
     setCompanySearchMsg({ type: 'info', text: '正在查詢登記資料…' });
 

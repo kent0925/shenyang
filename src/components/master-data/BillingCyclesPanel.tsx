@@ -16,6 +16,7 @@ import {
   TableProperties,
 } from 'lucide-react';
 import { backendStorageService } from '../../services/backendStorage';
+import { MasterClaimSheetView } from './MasterClaimSheetView';
 import type {
   AnnualBillingReport,
   BillingCycleRulePreview,
@@ -51,7 +52,7 @@ interface Props {
 
 export const BillingCyclesPanel: React.FC<Props> = ({ focusSection = 'cycle' }) => {
   // 總表子分頁：'monthly' (每月請款總表) | 'annual' (年度請款總表)
-  const [summarySubTab, setSummarySubTab] = useState<'monthly' | 'annual'>('monthly');
+  const [summarySubTab, setSummarySubTab] = useState<'master' | 'monthly' | 'annual'>('master');
 
   // 請款週期規則表單狀態
   const [ruleForm, setRuleForm] = useState<SaveBillingCycleRulePayload>(defaultRuleForm);
@@ -465,6 +466,9 @@ export const BillingCyclesPanel: React.FC<Props> = ({ focusSection = 'cycle' }) 
               </button>
             </div>
           </div>
+
+          {/* 母表：每月及年度請款總表 */}
+          {summarySubTab === 'master' && <MasterClaimSheetView />}
 
           {/* 子分頁 A: 每月請款總表 */}
           {summarySubTab === 'monthly' && (

@@ -1,37 +1,3 @@
-/**
- * 台灣營利事業統一編號 8 碼檢核（依財政部 112 年 4 月 1 日新制擴增邏輯）
- * 乘數：[1, 2, 1, 2, 1, 2, 4, 1]
- * 規則：
- * 1. 統一編號每位數字與對應權重相乘。
- * 2. 各乘積若為兩位數，則十位數與個位數相加，再將所有數值加總 (sum)。
- * 3. 檢查規則（新制）：總和除以 5 的餘數為 0 則為合法 (sum % 5 === 0)。
- * 4. 第 7 碼為 7 的特殊情況：乘積為 28 (2+8=10)，若 (sum % 5 !== 0)，
- *    則將總和加 1 判定：((sum + 1) % 5 === 0) 亦為合法。
- */
-export function validateTaxId(taxId: string): boolean {
-  const cleanId = (taxId || '').trim();
-  if (!/^\d{8}$/.test(cleanId)) return false;
-
-  const weights = [1, 2, 1, 2, 1, 2, 4, 1];
-  let sum = 0;
-
-  for (let i = 0; i < 8; i++) {
-    const num = parseInt(cleanId[i], 10);
-    const prod = num * weights[i];
-    sum += Math.floor(prod / 10) + (prod % 10);
-  }
-
-  // 112 年 4 月 1 日新制：除數為 5 (相容舊制能被 10 整除者)
-  if (sum % 5 === 0) return true;
-
-  // 第 7 位是 7 的特殊規則 (7*4=28 => 2+8=10 或 1+0=1)
-  if (cleanId[6] === '7' && (sum + 1) % 5 === 0) {
-    return true;
-  }
-
-  return false;
-}
-
 export type VendorEntityType = 'company' | 'branch' | 'business' | 'unknown';
 
 export interface VendorLookupResult {
@@ -40,6 +6,33 @@ export interface VendorLookupResult {
   entityType: VendorEntityType;
   name?: string;
   companyName?: string;
+}
+
+/**
+ * 驗證統一編號邏輯
+ * 支援舊制（除以 10 餘 0）與新制（2023 起倒數第 2 位為 7 時乘 4 加總餘 9 亦屬合法）
+ */
+export function validateTaxId(taxId: string): boolean {
+  const clean = (taxId || '').trim();
+  if (!/^\d{8}$/.test(clean)) return false;
+
+  const weights = [1, 2, 1, 2, 1, 2, 4, 1];
+  let sumOld = 0;
+  let sumNew = 0;
+
+  for (let i = 0; i < 8; i++) {
+    const digit = parseInt(clean[i], 10);
+    const prod = digit * weights[i];
+    const s = Math.floor(prod / 10) + (prod % 10);
+    sumOld += s;
+    if (i === 6 && digit === 7) {
+      sumNew += 1;
+    } else {
+      sumNew += s;
+    }
+  }
+
+  return sumOld % 10 === 0 || (clean[6] === '7' && sumNew % 10 === 0);
 }
 
 export type CompanyLookupResult = VendorLookupResult;
@@ -73,24 +66,27 @@ export async function lookupCompanyByTaxId(
           companyName: resolvedName,
         };
       }
-      if (data.found === false) {
-        return {
-          found: false,
-          taxId: cleanId,
-          entityType: data.entityType || 'unknown',
-        };
-      }
+      return {
+        found: false,
+        taxId: cleanId,
+        entityType: data.entityType || 'unknown',
+      };
     }
-    // 非 200 回應（如 500, 502 等）
-    throw new Error('公司資料服務暫時無法使用，請稍後再試或手動輸入廠商名稱。');
+    // 非 200 回應時安全降級，不中斷使用者操作
+    return {
+      found: false,
+      taxId: cleanId,
+      entityType: 'unknown',
+    };
   } catch (err: any) {
     if (err.name === 'AbortError') {
       throw err;
     }
-    // 網路錯誤、HTTP 錯誤或政府服務無回應
-    if (err.message === '公司資料服務暫時無法使用，請稍後再試或手動輸入廠商名稱。') {
-      throw err;
-    }
-    throw new Error('公司資料服務暫時無法使用，請稍後再試或手動輸入廠商名稱。');
+    // 網路連線異常或逾時，平順回傳未查得，提示使用者手動輸入
+    return {
+      found: false,
+      taxId: cleanId,
+      entityType: 'unknown',
+    };
   }
 }
