@@ -27,7 +27,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
 
   const formattedBank = formatPaymentBankAccount(data);
   const descLines = data.description ? data.description.split('\n') : [];
-  const displayLinesCount = Math.max(descLines.length, 12);
+  const displayLinesCount = 16;
   const displayLines: string[] = [];
   for (let i = 0; i < displayLinesCount; i++) {
     displayLines.push(descLines[i] || '');
@@ -61,24 +61,24 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
       {/* 主表格 */}
       <table className="w-full border-collapse border-2 border-slate-900 text-xs">
         <tbody>
-          {/* 列 4~5：專案、請購單、受款人、申請部門、經辦 */}
+          {/* 列 4~5：專案代號/名稱、請購單編號、受款人/廠商、申請部門、經辦 */}
           <tr className="border-b border-slate-900">
             <td className="w-24 bg-slate-100 font-bold p-1 text-center border-r border-slate-900">專案代號/名稱</td>
             <td className="p-1 border-r border-slate-900 font-medium">{data.project}</td>
             <td className="w-24 bg-slate-100 font-bold p-1 text-center border-r border-slate-900">請購單編號</td>
-            <td className="w-32 p-1 border-r border-slate-900 font-mono">{data.requisitionNumber}</td>
+            <td className="w-28 p-1 border-r border-slate-900 font-mono">{data.requisitionNumber}</td>
             <td className="w-24 bg-slate-100 font-bold p-1 text-center border-r border-slate-900">受款人/廠商</td>
-            <td className="p-1 border-r border-slate-900 font-medium">
+            <td colSpan={2} className="p-1 border-r border-slate-900 font-medium">
               <div>{data.vendor}</div>
               {data.vendorTaxId?.trim() ? (
                 <div className="text-[10px] text-slate-600 font-mono">統編：{data.vendorTaxId.trim()}</div>
               ) : null}
             </td>
-            <td rowSpan={3} className="w-7 bg-slate-100 font-bold p-1 text-center border-r border-slate-900 align-middle leading-snug">
-              申請部門
+            <td rowSpan={3} className="w-6 bg-slate-100 font-bold p-0.5 text-center border-r border-slate-900 align-middle leading-tight text-[11px]">
+              申<br/>請<br/>部<br/>門
             </td>
             <td className="w-16 p-1 text-center border-slate-900 align-top">
-              <div className="font-bold mb-4">經　　辦</div>
+              <div className="font-bold mb-3">經　　辦</div>
             </td>
           </tr>
 
@@ -89,9 +89,9 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
             <td className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900">合約/訂購單編號</td>
             <td className="p-1 border-r border-slate-900 font-mono">{data.contractNumber}</td>
             <td className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900">受款人/廠商匯款帳號</td>
-            <td className="p-1 border-r border-slate-900 font-mono whitespace-pre-wrap leading-tight">{formattedBank}</td>
+            <td colSpan={2} className="p-1 border-r border-slate-900 font-mono whitespace-pre-wrap leading-tight text-[11px]">{formattedBank}</td>
             <td className="p-1 text-center border-slate-900 align-top">
-              <div className="font-bold mb-4">複　　核</div>
+              <div className="font-bold mb-3">複　　核</div>
             </td>
           </tr>
 
@@ -102,89 +102,118 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
             <td className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900">合約/訂購單總額</td>
             <td className="p-1 border-r border-slate-900 font-mono text-right">{formatCurrency(data.contractTotal)}</td>
             <td className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900">付款到期日</td>
-            <td className="p-1 border-r border-slate-900 font-mono">
+            <td colSpan={2} className="p-1 border-r border-slate-900 font-mono">
               {dueDateParts ? `${dueDateParts.rocYear} 年 ${dueDateParts.month} 月 ${dueDateParts.day} 日` : '　年　月　日'}
             </td>
             <td className="p-1 text-center border-slate-900"></td>
           </tr>
 
-          {/* 列 11~12：付款明細標題 */}
+          {/* 列 11~12：付款明細標題列（含期次） */}
           <tr className="bg-slate-100 font-bold text-center border-b border-slate-900">
-            <td rowSpan={4} className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900 align-middle leading-snug w-7">
-              付款明細
+            <td rowSpan={4} className="bg-slate-100 font-bold p-0.5 text-center border-r border-slate-900 align-middle leading-tight text-[11px] w-6">
+              付<br/>款<br/>明<br/>細
             </td>
-            <td rowSpan={2} className="p-1 border-r border-slate-900 w-24">期次</td>
+            <td className="p-0.5 border-r border-slate-900 w-12 bg-slate-50 font-bold text-center">期次</td>
+            <td className="p-0.5 border-r border-slate-900 w-12 font-mono font-bold text-center text-blue-900 bg-white">
+              {data.installment || '1'}
+            </td>
             <td className="p-1 border-r border-slate-900">（1）</td>
             <td className="p-1 border-r border-slate-900">（2）</td>
             <td className="p-1 border-r border-slate-900">（3）</td>
             <td className="p-1 border-r border-slate-900">（4）</td>
-            <td colSpan={2} className="p-1 border-r border-slate-900">（5）=(1)-(2)-(3)-(4)</td>
+            <td className="p-1 border-r border-slate-900">（5）=(1)-(2)-(3)-(4)</td>
             <td rowSpan={4} className="w-16 p-1 text-center border-slate-900 align-middle">
               <div className="font-bold">主　　管</div>
             </td>
           </tr>
           <tr className="bg-slate-50 font-bold text-center border-b border-slate-900 text-[11px]">
+            <td colSpan={2} className="p-0.5 border-r border-slate-900 text-slate-500 font-normal"></td>
             <td className="p-1 border-r border-slate-900">請款/驗收/預付額</td>
             <td className="p-1 border-r border-slate-900">保留金額</td>
             <td className="p-1 border-r border-slate-900">預付款沖銷</td>
             <td className="p-1 border-r border-slate-900">罰扣（折讓金額）</td>
-            <td colSpan={2} className="p-1 border-r border-slate-900">實付金額</td>
+            <td className="p-1 border-r border-slate-900 font-bold">實付金額</td>
           </tr>
 
           {/* 列 13~14：本期 估驗/請款 */}
           <tr className="border-b border-slate-900 text-center font-mono h-7">
-            <td className="bg-slate-50 font-bold border-r border-slate-900 text-[11px]">本期 估驗/請款</td>
+            <td colSpan={2} className="bg-slate-50 font-bold border-r border-slate-900 text-[11px] leading-tight text-center p-1">
+              本期 估驗/請款
+            </td>
             <td className="p-1 border-r border-slate-900 text-right">{formatCurrency(data.currentAmount)}</td>
             <td className="p-1 border-r border-slate-900 text-right">{formatCurrency(data.retentionAmount)}</td>
             <td className="p-1 border-r border-slate-900 text-right">{formatCurrency(data.advanceDeduction)}</td>
             <td className="p-1 border-r border-slate-900 text-right">{formatCurrency(data.penaltyDiscount)}</td>
-            <td colSpan={2} className="p-1 border-r border-slate-900 text-right font-bold text-blue-900">
+            <td className="p-1 border-r border-slate-900 text-right font-bold text-blue-900 text-xs">
               {formatCurrency(payable) || '-'}
             </td>
           </tr>
 
           {/* 列 15~16：截至本期止 累計請款 */}
           <tr className="border-b-2 border-slate-900 text-center font-mono h-7 text-slate-500">
-            <td className="bg-slate-50 font-bold border-r border-slate-900 text-[11px]">截至本期止 累計請款</td>
+            <td colSpan={2} className="bg-slate-50 font-bold border-r border-slate-900 text-[11px] leading-tight text-center p-1">
+              截至本期止 累計請款
+            </td>
             <td className="p-1 border-r border-slate-900"></td>
             <td className="p-1 border-r border-slate-900"></td>
             <td className="p-1 border-r border-slate-900"></td>
             <td className="p-1 border-r border-slate-900"></td>
-            <td colSpan={2} className="p-1 border-r border-slate-900">-</td>
+            <td className="p-1 border-r border-slate-900 font-bold">-</td>
           </tr>
 
-          {/* 列 17~18：預算管理與會同驗收 */}
+          {/* 列 17~18：預算管理（嚴格 100% 重現母版 Excel 結構與直書漢字） */}
           <tr className="border-b border-slate-900">
-            <td rowSpan={2} className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900 align-middle leading-snug">
-              預算管理
+            {/* 1. 預算管理（直書大標題） */}
+            <td rowSpan={2} className="bg-slate-100 font-bold p-0.5 text-center border-r border-slate-900 align-middle leading-tight text-[11px] w-6">
+              預<br/>算<br/>管<br/>理
             </td>
-            <td className="bg-slate-50 p-1 border-r border-slate-900 font-bold text-center">合約金額/預算金額</td>
-            <td className="p-1 border-r border-slate-900 font-mono text-right">{contractAmt ? formatCurrency(contractAmt) : ''}</td>
-            <td rowSpan={2} className="bg-slate-50 p-1 border-r border-slate-900 font-bold text-center align-middle">餘額或超支</td>
-            <td rowSpan={2} className="p-1 border-r border-slate-900 font-mono text-right font-bold text-slate-800">
+            {/* 2. 合約金額/預算金額 標題 */}
+            <td colSpan={2} className="bg-slate-50 p-1 border-r border-slate-900 font-bold text-center text-[10px] leading-tight">
+              合約金額<br/>/預算金額
+            </td>
+            {/* 3. 合約金額數值格 */}
+            <td className="p-1 border-r border-slate-900 font-mono text-right text-xs font-semibold">
+              {contractAmt ? formatCurrency(contractAmt) : ''}
+            </td>
+            {/* 4. 餘額或超支（直書文字） */}
+            <td rowSpan={2} className="bg-slate-50 p-0.5 border-r border-slate-900 font-bold text-center align-middle leading-tight text-[11px] w-6">
+              餘<br/>額<br/>或<br/>超<br/>支
+            </td>
+            {/* 5. 餘額數值格 */}
+            <td rowSpan={2} className="p-1 border-r border-slate-900 font-mono text-right font-bold text-xs align-middle">
               {contractAmt ? formatCurrency(balanceAmt) : ''}
             </td>
-            <td rowSpan={2} className="bg-slate-50 p-1 border-r border-slate-900 font-bold text-center align-middle">預算查認者</td>
-            <td rowSpan={2} className="bg-slate-50 p-1 border-r border-slate-900 font-bold text-center align-middle">會同驗收者</td>
-            <td className="bg-slate-50 p-1 border-r border-slate-900 font-bold text-center">主管</td>
-            <td className="p-1 text-center border-slate-900">經辦</td>
+            {/* 6. 預算查認者（直書文字） */}
+            <td rowSpan={2} className="bg-slate-50 p-0.5 border-r border-slate-900 font-bold text-center align-middle leading-tight text-[11px] w-6">
+              預<br/>算<br/>查<br/>認<br/>者
+            </td>
+            {/* 7. 預算查認者簽名空白格 */}
+            <td rowSpan={2} className="p-1 border-r border-slate-900"></td>
+            {/* 8. 會同驗收者（直書文字） */}
+            <td rowSpan={2} className="bg-slate-50 p-0.5 border-r border-slate-900 font-bold text-center align-middle leading-tight text-[11px] w-6">
+              會<br/>同<br/>驗<br/>收<br/>者
+            </td>
           </tr>
           <tr className="border-b-2 border-slate-900">
-            <td className="bg-slate-50 p-1 border-r border-slate-900 font-bold text-center">累計實支金額</td>
-            <td className="p-1 border-r border-slate-900 font-mono text-right">{payable ? formatCurrency(payable) : ''}</td>
-            <td className="p-1 border-r border-slate-900 h-6"></td>
-            <td className="p-1 text-center border-slate-900 h-6"></td>
+            {/* 2. 累計實支金額 標題 */}
+            <td colSpan={2} className="bg-slate-50 p-1 border-r border-slate-900 font-bold text-center text-[10px] leading-tight">
+              累計實支<br/>金額
+            </td>
+            {/* 3. 累計實支金額數值格 */}
+            <td className="p-1 border-r border-slate-900 font-mono text-right text-xs font-semibold">
+              {payable ? formatCurrency(payable) : ''}
+            </td>
           </tr>
 
           {/* 列 20~21：單據粘貼處與特殊要求 */}
           <tr className="border-b border-slate-900">
-            <td rowSpan={2} className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900 align-middle leading-snug">
-              單據粘貼處
+            <td rowSpan={2} className="bg-slate-100 font-bold p-0.5 text-center border-r border-slate-900 align-middle leading-tight text-[11px] w-6">
+              單<br/>據<br/>粘<br/>貼<br/>處
             </td>
-            <td rowSpan={2} className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900 align-middle">
+            <td colSpan={2} rowSpan={2} className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900 align-middle">
               特殊要求
             </td>
-            <td colSpan={6} className="p-1.5 border-r border-slate-900">
+            <td colSpan={5} className="p-1.5 border-r border-slate-900">
               <div className="flex flex-wrap items-center gap-4 text-[11px]">
                 <span>{sr.noCross ? '☑' : '☐'} 請勿劃線</span>
                 <span>{sr.cashiersCheck ? '☑' : '☐'} 請開立銀行本票/台銀支票</span>
@@ -197,7 +226,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
             </td>
           </tr>
           <tr className="border-b-2 border-slate-900">
-            <td colSpan={6} className="p-1.5 border-r border-slate-900 text-[11px]">
+            <td colSpan={5} className="p-1.5 border-r border-slate-900 text-[11px]">
               <div className="flex flex-wrap items-center gap-4">
                 <span>{sr.noEndorse ? '☑' : '☐'} 請勿禁止背書轉讓</span>
                 <span>
@@ -234,10 +263,10 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
 
           {/* 列 22~37：請款說明與總經理、董事長簽核 */}
           <tr>
-            <td colSpan={2} className="bg-slate-100 font-bold p-2 text-center border-r border-slate-900 align-middle">
+            <td colSpan={3} className="bg-slate-100 font-bold p-2 text-center border-r border-slate-900 align-middle">
               請款說明
             </td>
-            <td colSpan={6} className="p-0 border-r border-slate-900 align-top">
+            <td colSpan={5} className="p-0 border-r border-slate-900 align-top">
               <div className="divide-y divide-slate-200 min-h-[220px]">
                 {displayLines.map((line, idx) => (
                   <div key={idx} className="px-2 py-1 min-h-[20px] text-slate-800 whitespace-pre-wrap break-words">

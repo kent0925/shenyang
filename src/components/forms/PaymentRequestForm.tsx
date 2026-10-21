@@ -1756,7 +1756,19 @@ export const PaymentRequestForm: React.FC<Props> = ({
           <span>金額與付款明細</span>
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          {/* 請款期次 */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">請款期次</label>
+            <input
+              type="text"
+              placeholder="例如 1 或 第一期"
+              value={data.installment || ''}
+              onChange={(e) => onChange({ ...data, installment: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+            />
+          </div>
+
           {/* 費用性質 */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">費用性質</label>

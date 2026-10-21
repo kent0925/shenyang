@@ -109,14 +109,22 @@ export async function generatePaymentRequestExcel(data: PaymentRequestData): Pro
     data.penaltyDiscount
   );
 
-  // 預算管理動態連動做動：
-  // I17: 合約金額/預算金額 -> 連動合約總額 =I10，快取值 parsedContractTotal，style 92（千分位）
-  sheet1Xml = updateSheetCellFormula(sheet1Xml, 'I17', '=I10', parsedContractTotal, '92');
-  // I18: 累計實支金額 -> 連動本期實付 =T13，快取值 payable，style 92（千分位）
-  sheet1Xml = updateSheetCellFormula(sheet1Xml, 'I18', '=T13', payable, '92');
-  // M17: 餘額或超支 -> 連動 =I17-I18，快取值 (parsedContractTotal - payable)，style 92（千分位）
+  // G11: 期次填寫格（G11:G12 合併）
+  if (data.installment) {
+    sheet1Xml = updateSheetCell(sheet1Xml, 'G11', data.installment);
+  }
+
+  // T13: (5) 實付金額原生公式為 =H13-I13-L13-N13，填入快取值與千分位樣式 92
+  sheet1Xml = updateSheetCellFormula(sheet1Xml, 'T13', '=H13-I13-L13-N13', payable, '92');
+
+  // 預算管理（嚴格對照母版，絕不覆寫 I17/M17 原生文字）：
+  // H17: 合約金額/預算金額數值格 -> 公式 =I10，快取值 parsedContractTotal，千分位樣式 92
+  sheet1Xml = updateSheetCellFormula(sheet1Xml, 'H17', '=I10', parsedContractTotal, '92');
+  // H18: 累計實支金額數值格 -> 公式 =T13，快取值 payable，千分位樣式 92
+  sheet1Xml = updateSheetCellFormula(sheet1Xml, 'H18', '=T13', payable, '92');
+  // J17: 餘額或超支數值格（J17:L18 合併） -> 公式 =H17-H18，快取值 (parsedContractTotal - payable)，千分位樣式 92
   const remainingBudget = (parsedContractTotal !== null ? parsedContractTotal : 0) - payable;
-  sheet1Xml = updateSheetCellFormula(sheet1Xml, 'M17', '=I17-I18', remainingBudget, '92');
+  sheet1Xml = updateSheetCellFormula(sheet1Xml, 'J17', '=H17-H18', remainingBudget, '92');
 
   // 遠期支票兌現條件呈現（Row 21：J21:M21, N21, O21, P21, Q21, R21, S21, T21:X21）
   const sr = data.specialRequirements;

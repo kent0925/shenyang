@@ -54,6 +54,7 @@ export interface PaymentRequestData {
   dueDate: string;          // 付款到期日 YYYY-MM-DD
   
   // 付款明細（本期）
+  installment?: string;     // 期次（如 1、第 1 期）
   currentAmount: string;    // (1) 請款/驗收/預付額
   retentionAmount: string;  // (2) 保留金額
   advanceDeduction: string; // (3) 預付款沖銷
@@ -97,6 +98,7 @@ export const INITIAL_PAYMENT_REQUEST_DATA: PaymentRequestData = {
   expenseNature: '',
   contractTotal: '',
   dueDate: '',
+  installment: '1',
   currentAmount: '',
   retentionAmount: '',
   advanceDeduction: '',
