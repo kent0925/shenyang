@@ -416,6 +416,25 @@ export const PaymentRequestForm: React.FC<Props> = ({
     return [];
   }, [selectedVendor]);
 
+  const hasStoredAccounts = Boolean(data.vendorId && vendorBankAccounts.length > 0);
+  const currentAccKey = useMemo(() => {
+    return getBankAccountKey({
+      bankCode: data.bankCode,
+      bankName: data.bankName,
+      branchCode: data.branchCode,
+      branchName: data.branchName || data.bankAccount?.branch,
+      accountNumber: data.accountNumber || data.bankAccount?.accountNumber,
+    });
+  }, [data.bankCode, data.bankName, data.branchCode, data.branchName, data.bankAccount, data.accountNumber]);
+
+  const selectedStoredAccountIndex = useMemo(() => {
+    if (!hasStoredAccounts) return -1;
+    return vendorBankAccounts.findIndex((acc) => getBankAccountKey(acc) === currentAccKey);
+  }, [hasStoredAccounts, vendorBankAccounts, currentAccKey]);
+
+  const isNewAccountMode = selectedStoredAccountIndex === -1;
+  const showBankInputFields = !hasStoredAccounts || isNewAccountMode;
+
   // 切換已儲存之匯款帳號
   const handleSelectStoredAccount = (acc: VendorBankAccount) => {
     const bCode = acc.bankCode || '';
@@ -1463,7 +1482,7 @@ export const PaymentRequestForm: React.FC<Props> = ({
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-slate-400">依官方金融機構代碼與分支機構資料庫雙向連動</span>
-              {(data.bankCode || data.bankName || data.accountNumber) && (
+              {showBankInputFields && (data.bankCode || data.bankName || data.accountNumber) && (
                 <button
                   type="button"
                   onClick={handleClearBankAccount}
@@ -1477,257 +1496,248 @@ export const PaymentRequestForm: React.FC<Props> = ({
           </div>
 
           {/* 若廠商主檔有已儲存帳號，提供快速切換與新增選項 */}
-          {data.vendorId && vendorBankAccounts.length > 0 && (() => {
-            const currentAccKey = getBankAccountKey({
-              bankCode: data.bankCode,
-              bankName: data.bankName,
-              branchCode: data.branchCode,
-              branchName: data.branchName || data.bankAccount?.branch,
-              accountNumber: data.accountNumber || data.bankAccount?.accountNumber,
-            });
-            const matchingIndex = vendorBankAccounts.findIndex(
-              (acc) => getBankAccountKey(acc) === currentAccKey
-            );
-            const isNewAccountMode = matchingIndex === -1;
+          {hasStoredAccounts && (
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+              <div className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                <span>選擇廠商已登記之匯款帳號（共 {vendorBankAccounts.length} 組）：</span>
+                {isNewAccountMode && (
+                  <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-medium border border-amber-200">
+                    填寫新帳號模式（儲存後自動新增至主檔）
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {vendorBankAccounts.map((acc, idx) => {
+                  const accKey = getBankAccountKey(acc);
+                  const isSelected = selectedStoredAccountIndex === idx;
+                  const bankDisplay = `${acc.bankName || ''}${acc.bankCode ? ` (${acc.bankCode})` : ''}`;
+                  const branchDisplay = `${acc.branchName || ''}${acc.branchCode ? ` (${acc.branchCode})` : ''}`;
+                  return (
+                    <div
+                      key={accKey || idx}
+                      className={`flex items-start justify-between gap-2 p-2 rounded-lg border text-xs transition-colors ${
+                        isSelected
+                          ? 'bg-blue-50 border-blue-300 text-blue-900 font-medium'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <label className="flex items-start gap-2 flex-1 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="vendorStoredAccount"
+                          checked={isSelected}
+                          onChange={() => handleSelectStoredAccount(acc)}
+                          className="mt-0.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">{bankDisplay || '未指定銀行'}</span>
+                            {branchDisplay && <span className="text-slate-500">／ {branchDisplay}</span>}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            帳號：<span className="font-mono text-slate-800 font-semibold">{acc.accountNumber || '無帳號'}</span>
+                            {acc.accountName && <span className="ml-3">戶名：{acc.accountName}</span>}
+                          </div>
+                        </div>
+                      </label>
+                      <button
+                        type="button"
+                        title="從廠商主檔中刪除此筆匯款帳號"
+                        onClick={(e) => handleDeleteStoredAccount(acc, e)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors self-center flex-shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
 
-            return (
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
-                <div className="text-xs font-semibold text-slate-700 flex items-center justify-between">
-                  <span>選擇廠商已登記之匯款帳號（共 {vendorBankAccounts.length} 組）：</span>
-                  {isNewAccountMode && (
-                    <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-medium border border-amber-200">
-                      填寫新帳號模式（儲存後自動新增至主檔）
-                    </span>
+                {/* ＋ 新增匯款帳號 Radio */}
+                <label
+                  className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                    isNewAccountMode
+                      ? 'bg-amber-50 border-amber-300 text-amber-900 font-medium'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="vendorStoredAccount"
+                    checked={isNewAccountMode}
+                    onChange={handleSelectNewAccountMode}
+                    className="text-amber-600 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <span>＋ 新增匯款帳號（於下方輸入明細，存檔後自動累積至此廠商）</span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* 除非點選「＋ 新增匯款帳號」或該廠商未有登記帳號，否則下方銀行填寫欄位不顯示 */}
+          {showBankInputFields && (
+            <div className="space-y-4 pt-1">
+              {/* 第一列：金融機構代碼與名稱 */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-4">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    機構代碼（3 碼）
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={3}
+                    placeholder="如 007, 700"
+                    value={data.bankCode || ''}
+                    onChange={(e) => handleBankCodeChange(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+                <div className="sm:col-span-8">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    金融機構名稱（可下拉選取或由代碼自動帶入）
+                  </label>
+                  <select
+                    value={currentBank ? currentBank.code : ''}
+                    onChange={(e) => handleBankSelect(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="">-- 請選擇或輸入金融機構代碼 --</option>
+                    {banks.map((b) => (
+                      <option key={b.code} value={b.code}>
+                        {b.code} {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* 第二列：分支代碼與分支名稱 */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-4">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    分支代碼（4 碼）
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    placeholder="如 1440, 0021"
+                    value={data.branchCode || ''}
+                    onChange={(e) => handleBranchCodeChange(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+                <div className="sm:col-span-8">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    分支名稱（已依金融機構篩選分支機構）
+                  </label>
+                  {currentBranches.length > 0 ? (
+                    <select
+                      value={data.branchCode || ''}
+                      onChange={(e) => handleBranchSelect(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="">-- 請選擇分支機構 ({currentBranches.length} 家) --</option>
+                      {currentBranches.map((br) => (
+                        <option key={br.code} value={br.code}>
+                          {br.code} {br.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="請先選擇金融機構或手動輸入分支名稱"
+                      value={data.branchName || ''}
+                      onChange={(e) => {
+                        const name = e.target.value;
+                        onChange({
+                          ...data,
+                          branchName: name,
+                          bankAccount: { ...data.bankAccount, branch: name },
+                        });
+                      }}
+                      className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
                   )}
                 </div>
-                <div className="space-y-1.5">
-                  {vendorBankAccounts.map((acc, idx) => {
-                    const accKey = getBankAccountKey(acc);
-                    const isSelected = matchingIndex === idx;
-                    const bankDisplay = `${acc.bankName || ''}${acc.bankCode ? ` (${acc.bankCode})` : ''}`;
-                    const branchDisplay = `${acc.branchName || ''}${acc.branchCode ? ` (${acc.branchCode})` : ''}`;
-                    return (
-                      <div
-                        key={accKey || idx}
-                        className={`flex items-start justify-between gap-2 p-2 rounded-lg border text-xs transition-colors ${
-                          isSelected
-                            ? 'bg-blue-50 border-blue-300 text-blue-900 font-medium'
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        <label className="flex items-start gap-2 flex-1 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="vendorStoredAccount"
-                            checked={isSelected}
-                            onChange={() => handleSelectStoredAccount(acc)}
-                            className="mt-0.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                          />
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold">{bankDisplay || '未指定銀行'}</span>
-                              {branchDisplay && <span className="text-slate-500">／ {branchDisplay}</span>}
-                            </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
-                              帳號：<span className="font-mono text-slate-800 font-semibold">{acc.accountNumber || '無帳號'}</span>
-                              {acc.accountName && <span className="ml-3">戶名：{acc.accountName}</span>}
-                            </div>
-                          </div>
-                        </label>
-                        <button
-                          type="button"
-                          title="從廠商主檔中刪除此筆匯款帳號"
-                          onClick={(e) => handleDeleteStoredAccount(acc, e)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors self-center flex-shrink-0"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    );
-                  })}
+              </div>
 
-                  {/* ＋ 新增匯款帳號 Radio */}
-                  <label
-                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                      isNewAccountMode
-                        ? 'bg-amber-50 border-amber-300 text-amber-900 font-medium'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+              {/* 第三列：戶名與帳號 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-600">戶名</label>
+                    <div className="flex items-center gap-3 text-xs text-slate-700 select-none">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="accountNameSource"
+                          checked={data.accountNameSameAsVendor !== false}
+                          onChange={() => handleAccountSourceSelect(true)}
+                          className="text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>同受款人／廠商名稱</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="accountNameSource"
+                          checked={data.accountNameSameAsVendor === false}
+                          onChange={() => handleAccountSourceSelect(false)}
+                          className="text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>自訂戶名</span>
+                      </label>
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    readOnly={data.accountNameSameAsVendor !== false}
+                    placeholder={data.accountNameSameAsVendor !== false ? '同受款人／廠商名稱' : '請輸入自訂戶名'}
+                    value={
+                      data.accountNameSameAsVendor !== false
+                        ? data.vendor
+                        : data.accountName || data.bankAccount?.accountName || ''
+                    }
+                    onChange={(e) => handleAccountNameChange(e.target.value)}
+                    className={`w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 ${
+                      data.accountNameSameAsVendor !== false ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'bg-white'
                     }`}
-                  >
-                    <input
-                      type="radio"
-                      name="vendorStoredAccount"
-                      checked={isNewAccountMode}
-                      onChange={handleSelectNewAccountMode}
-                      className="text-amber-600 focus:ring-amber-500 cursor-pointer"
-                    />
-                    <span>＋ 新增匯款帳號（於下方輸入明細，存檔後自動累積至此廠商）</span>
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    帳號（保留前置 0）
                   </label>
+                  <input
+                    type="text"
+                    placeholder="匯款帳號（如 007123456789）"
+                    value={data.accountNumber || data.bankAccount?.accountNumber || ''}
+                    onChange={(e) => handleAccountNumberChange(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                  {(() => {
+                    const isPost = data.bankCode === '700';
+                    const isPostPassbook = isPost && (data.branchCode === '0021' || (data.branchName && data.branchName.includes('存簿')));
+                    const isPostGiro = isPost && (data.branchCode === '0010' || (data.branchName && data.branchName.includes('劃撥')));
+                    const accNum = (data.accountNumber || '').trim();
+                    let warning: string | null = null;
+                    if (isPostPassbook && accNum.length > 0 && accNum.length !== 14) {
+                      warning = '郵政存簿儲金帳號通常為 14 位，請確認帳號。';
+                    } else if (isPostGiro && accNum.length > 0 && accNum.length !== 8) {
+                      warning = '郵政劃撥儲金帳號通常為 8 位，請確認帳號。';
+                    }
+                    return warning ? (
+                      <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1 font-medium">
+                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>{warning}</span>
+                      </p>
+                    ) : null;
+                  })()}
                 </div>
               </div>
-            );
-          })()}
-
-          {/* 第一列：金融機構代碼與名稱 */}
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-            <div className="sm:col-span-4">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                機構代碼（3 碼）
-              </label>
-              <input
-                type="text"
-                maxLength={3}
-                placeholder="如 007, 700"
-                value={data.bankCode || ''}
-                onChange={(e) => handleBankCodeChange(e.target.value)}
-                className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
-              />
             </div>
-            <div className="sm:col-span-8">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                金融機構名稱（可下拉選取或由代碼自動帶入）
-              </label>
-              <select
-                value={currentBank ? currentBank.code : ''}
-                onChange={(e) => handleBankSelect(e.target.value)}
-                className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="">-- 請選擇或輸入金融機構代碼 --</option>
-                {banks.map((b) => (
-                  <option key={b.code} value={b.code}>
-                    {b.code} {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* 第二列：分支代碼與分支名稱 */}
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-            <div className="sm:col-span-4">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                分支代碼（4 碼）
-              </label>
-              <input
-                type="text"
-                maxLength={4}
-                placeholder="如 1440, 0021"
-                value={data.branchCode || ''}
-                onChange={(e) => handleBranchCodeChange(e.target.value)}
-                className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
-              />
-            </div>
-            <div className="sm:col-span-8">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                分支名稱（已依金融機構篩選分支機構）
-              </label>
-              {currentBranches.length > 0 ? (
-                <select
-                  value={data.branchCode || ''}
-                  onChange={(e) => handleBranchSelect(e.target.value)}
-                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                  <option value="">-- 請選擇分支機構 ({currentBranches.length} 家) --</option>
-                  {currentBranches.map((br) => (
-                    <option key={br.code} value={br.code}>
-                      {br.code} {br.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  placeholder="請先選擇金融機構或手動輸入分支名稱"
-                  value={data.branchName || ''}
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    onChange({
-                      ...data,
-                      branchName: name,
-                      bankAccount: { ...data.bankAccount, branch: name },
-                    });
-                  }}
-                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              )}
-            </div>
-          </div>
-
-          {/* 第三列：戶名與帳號 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-600">戶名</label>
-                <div className="flex items-center gap-3 text-xs text-slate-700 select-none">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="accountNameSource"
-                      checked={data.accountNameSameAsVendor !== false}
-                      onChange={() => handleAccountSourceSelect(true)}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>同受款人／廠商名稱</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="accountNameSource"
-                      checked={data.accountNameSameAsVendor === false}
-                      onChange={() => handleAccountSourceSelect(false)}
-                      className="text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>自訂戶名</span>
-                  </label>
-                </div>
-              </div>
-              <input
-                type="text"
-                readOnly={data.accountNameSameAsVendor !== false}
-                placeholder={data.accountNameSameAsVendor !== false ? '同受款人／廠商名稱' : '請輸入自訂戶名'}
-                value={
-                  data.accountNameSameAsVendor !== false
-                    ? data.vendor
-                    : data.accountName || data.bankAccount?.accountName || ''
-                }
-                onChange={(e) => handleAccountNameChange(e.target.value)}
-                className={`w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 ${
-                  data.accountNameSameAsVendor !== false ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'bg-white'
-                }`}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                帳號（保留前置 0）
-              </label>
-              <input
-                type="text"
-                placeholder="匯款帳號（如 007123456789）"
-                value={data.accountNumber || data.bankAccount?.accountNumber || ''}
-                onChange={(e) => handleAccountNumberChange(e.target.value)}
-                className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 font-mono"
-              />
-              {(() => {
-                const isPost = data.bankCode === '700';
-                const isPostPassbook = isPost && (data.branchCode === '0021' || (data.branchName && data.branchName.includes('存簿')));
-                const isPostGiro = isPost && (data.branchCode === '0010' || (data.branchName && data.branchName.includes('劃撥')));
-                const accNum = (data.accountNumber || '').trim();
-                let warning: string | null = null;
-                if (isPostPassbook && accNum.length > 0 && accNum.length !== 14) {
-                  warning = '郵政存簿儲金帳號通常為 14 位，請確認帳號。';
-                } else if (isPostGiro && accNum.length > 0 && accNum.length !== 8) {
-                  warning = '郵政劃撥儲金帳號通常為 8 位，請確認帳號。';
-                }
-                return warning ? (
-                  <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1 font-medium">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>{warning}</span>
-                  </p>
-                ) : null;
-              })()}
-            </div>
-          </div>
+          )}
 
           {/* 隱私與安全提示 */}
           <div className="mt-2 pt-2.5 border-t border-slate-100 flex items-start gap-2 text-[11px] text-slate-500 leading-relaxed">
