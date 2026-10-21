@@ -19,6 +19,8 @@ import {
   RotateCw,
   Wallet,
   Sparkles,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { calculatePayableAmount, formatCurrency } from '../../utils/format';
 import { validateTaxId, lookupCompanyByTaxId } from '../../services/companyLookup';
@@ -480,6 +482,96 @@ export const PaymentRequestForm: React.FC<Props> = ({
         accountName: data.vendor,
       },
     });
+  };
+
+  // 清空當前填寫的金融機構與帳號
+  const handleClearBankAccount = () => {
+    onChange({
+      ...data,
+      bankCode: '',
+      bankName: '',
+      branchCode: '',
+      branchName: '',
+      accountNumber: '',
+      accountName: data.accountNameSameAsVendor !== false ? data.vendor : '',
+      bankAccount: {
+        type: 'code',
+        bankCode: '',
+        bankName: '',
+        branch: '',
+        accountNumber: '',
+        accountName: data.accountNameSameAsVendor !== false ? data.vendor : '',
+      },
+    });
+  };
+
+  // 從廠商主檔刪除已登記之匯款帳號
+  const handleDeleteStoredAccount = async (accToDelete: VendorBankAccount, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    if (!selectedVendor) return;
+
+    const bDisplay = `${accToDelete.bankName || ''}${accToDelete.bankCode ? ` (${accToDelete.bankCode})` : ''}`;
+    const confirmMsg = `確定要從廠商「${selectedVendor.vendorName}」的主檔中刪除此組匯款帳號嗎？\n\n金融機構：${bDisplay || '未指定'}\n帳號：${accToDelete.accountNumber || '無'}\n戶名：${accToDelete.accountName || '無'}`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const targetKey = getBankAccountKey(accToDelete);
+    // 過濾掉該筆帳號
+    const currentAccounts = vendorBankAccounts;
+    const filteredAccounts = currentAccounts.filter(
+      (acc) => getBankAccountKey(acc) !== targetKey && acc.accountNumber !== accToDelete.accountNumber
+    );
+
+    // 取得剩餘的第一筆帳號作為主帳號 fallback
+    const nextPrimary = filteredAccounts[0];
+
+    const updatedPayload = {
+      vendorId: selectedVendor.vendorId,
+      vendorName: selectedVendor.vendorName,
+      taxId: selectedVendor.taxId,
+      entityType: selectedVendor.entityType,
+      bankCode: nextPrimary ? nextPrimary.bankCode : '',
+      bankName: nextPrimary ? nextPrimary.bankName : '',
+      branchCode: nextPrimary ? nextPrimary.branchCode : '',
+      branchName: nextPrimary ? nextPrimary.branchName : '',
+      accountName: nextPrimary ? nextPrimary.accountName : '',
+      accountNumber: nextPrimary ? nextPrimary.accountNumber : '',
+      bankAccounts: filteredAccounts,
+      isActive: selectedVendor.isActive,
+    };
+
+    try {
+      const updatedVendor = await backendStorageService.saveVendor(updatedPayload);
+      // 更新本地 vendors 狀態
+      setVendors((prev) =>
+        prev.map((v) => (v.vendorId === updatedVendor.vendorId ? updatedVendor : v))
+      );
+
+      // 檢查當前表單是否正選中這筆被刪除的帳號
+      const currentFormAccKey = getBankAccountKey({
+        bankCode: data.bankCode,
+        bankName: data.bankName,
+        branchCode: data.branchCode,
+        branchName: data.branchName || data.bankAccount?.branch,
+        accountNumber: data.accountNumber || data.bankAccount?.accountNumber,
+      });
+
+      if (currentFormAccKey === targetKey || (data.accountNumber && data.accountNumber === accToDelete.accountNumber)) {
+        if (nextPrimary) {
+          // 自動切換到剩餘的第一筆帳號
+          handleSelectStoredAccount(nextPrimary);
+        } else {
+          // 無剩餘帳號，切換至新增帳號模式並清空
+          handleSelectNewAccountMode();
+        }
+      }
+    } catch (err) {
+      console.error('刪除帳號失敗：', err);
+      alert('刪除匯款帳號失敗，請稍後再試。');
+    }
   };
 
   const currentBank = banks.find(
@@ -1364,12 +1456,24 @@ export const PaymentRequestForm: React.FC<Props> = ({
 
         {/* 金融機構與帳號結構化輸入 */}
         <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100 flex-wrap gap-2">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
               <Landmark className="w-4 h-4 text-slate-600" />
               <span>匯款金融機構與帳號明細</span>
             </div>
-            <span className="text-[11px] text-slate-400">依官方金融機構代碼與分支機構資料庫雙向連動</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400">依官方金融機構代碼與分支機構資料庫雙向連動</span>
+              {(data.bankCode || data.bankName || data.accountNumber) && (
+                <button
+                  type="button"
+                  onClick={handleClearBankAccount}
+                  className="text-[11px] text-slate-500 hover:text-red-600 px-2 py-0.5 rounded border border-slate-200 hover:border-red-200 hover:bg-red-50 transition-colors flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  清空帳號資料
+                </button>
+              )}
+            </div>
           </div>
 
           {/* 若廠商主檔有已儲存帳號，提供快速切換與新增選項 */}
@@ -1403,32 +1507,42 @@ export const PaymentRequestForm: React.FC<Props> = ({
                     const bankDisplay = `${acc.bankName || ''}${acc.bankCode ? ` (${acc.bankCode})` : ''}`;
                     const branchDisplay = `${acc.branchName || ''}${acc.branchCode ? ` (${acc.branchCode})` : ''}`;
                     return (
-                      <label
+                      <div
                         key={accKey || idx}
-                        className={`flex items-start gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                        className={`flex items-start justify-between gap-2 p-2 rounded-lg border text-xs transition-colors ${
                           isSelected
                             ? 'bg-blue-50 border-blue-300 text-blue-900 font-medium'
                             : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
-                        <input
-                          type="radio"
-                          name="vendorStoredAccount"
-                          checked={isSelected}
-                          onChange={() => handleSelectStoredAccount(acc)}
-                          className="mt-0.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">{bankDisplay || '未指定銀行'}</span>
-                            {branchDisplay && <span className="text-slate-500">／ {branchDisplay}</span>}
+                        <label className="flex items-start gap-2 flex-1 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="vendorStoredAccount"
+                            checked={isSelected}
+                            onChange={() => handleSelectStoredAccount(acc)}
+                            className="mt-0.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">{bankDisplay || '未指定銀行'}</span>
+                              {branchDisplay && <span className="text-slate-500">／ {branchDisplay}</span>}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                              帳號：<span className="font-mono text-slate-800 font-semibold">{acc.accountNumber || '無帳號'}</span>
+                              {acc.accountName && <span className="ml-3">戶名：{acc.accountName}</span>}
+                            </div>
                           </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">
-                            帳號：<span className="font-mono text-slate-800 font-semibold">{acc.accountNumber || '無帳號'}</span>
-                            {acc.accountName && <span className="ml-3">戶名：{acc.accountName}</span>}
-                          </div>
-                        </div>
-                      </label>
+                        </label>
+                        <button
+                          type="button"
+                          title="從廠商主檔中刪除此筆匯款帳號"
+                          onClick={(e) => handleDeleteStoredAccount(acc, e)}
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors self-center flex-shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     );
                   })}
 

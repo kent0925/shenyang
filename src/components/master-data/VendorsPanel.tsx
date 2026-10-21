@@ -14,7 +14,8 @@ import { backendStorageService } from '../../services/backendStorage';
 import { BackendApiError } from '../../services/backendClient';
 import { loadBanks, findBankByCode, findBranchByCode, type BankItem } from '../../services/bankLookup';
 import { validateTaxId } from '../../services/companyLookup';
-import type { Vendor } from '../../models/backend';
+import type { Vendor, VendorBankAccount, SaveVendorPayload } from '../../models/backend';
+import { getBankAccountKey } from '../../services/vendorSync';
 import {
   Building2,
   Plus,
@@ -25,6 +26,9 @@ import {
   Loader2,
   X,
   RefreshCw,
+  Trash2,
+  RotateCcw,
+  Landmark,
 } from 'lucide-react';
 
 /**
@@ -49,7 +53,19 @@ export const VendorsPanel: React.FC = () => {
   // 編輯 / 新增 Modal 狀態
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    vendorName: string;
+    taxId: string;
+    entityType: string;
+    bankCode: string;
+    bankName: string;
+    branchCode: string;
+    branchName: string;
+    accountName: string;
+    accountNumber: string;
+    isActive: boolean;
+    bankAccounts: VendorBankAccount[];
+  }>({
     vendorName: '',
     taxId: '',
     entityType: '公司',
@@ -60,6 +76,7 @@ export const VendorsPanel: React.FC = () => {
     accountName: '',
     accountNumber: '',
     isActive: true,
+    bankAccounts: [],
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -90,12 +107,19 @@ export const VendorsPanel: React.FC = () => {
     loadInitialData();
   }, [loadInitialData]);
 
+  // 當前選擇之銀行
+  const currentBank = useMemo(() => {
+    if (!formData.bankCode && !formData.bankName) return undefined;
+    return (
+      banks.find((b) => b.code === formData.bankCode) ||
+      banks.find((b) => b.name === formData.bankName)
+    );
+  }, [formData.bankCode, formData.bankName, banks]);
+
   // 當前選擇之銀行所對應的分行清單
   const currentBankBranches = useMemo(() => {
-    if (!formData.bankCode || banks.length === 0) return [];
-    const b = findBankByCode(banks, formData.bankCode);
-    return b ? b.branches : [];
-  }, [formData.bankCode, banks]);
+    return currentBank ? currentBank.branches : [];
+  }, [currentBank]);
 
   // 開啟新增 Modal
   const handleOpenCreate = () => {
@@ -111,6 +135,7 @@ export const VendorsPanel: React.FC = () => {
       accountName: '',
       accountNumber: '',
       isActive: true,
+      bankAccounts: [],
     });
     setFormErrors({});
     setIsModalOpen(true);
@@ -119,6 +144,21 @@ export const VendorsPanel: React.FC = () => {
   // 開啟編輯 Modal
   const handleOpenEdit = (vendor: Vendor) => {
     setEditingVendor(vendor);
+
+    let initialAccounts: VendorBankAccount[] = [];
+    if (vendor.bankAccounts && Array.isArray(vendor.bankAccounts) && vendor.bankAccounts.length > 0) {
+      initialAccounts = [...vendor.bankAccounts];
+    } else if (vendor.accountNumber || vendor.bankCode) {
+      initialAccounts = [{
+        bankCode: vendor.bankCode || '',
+        bankName: vendor.bankName || '',
+        branchCode: vendor.branchCode || '',
+        branchName: vendor.branchName || '',
+        accountName: vendor.accountName || vendor.vendorName || '',
+        accountNumber: vendor.accountNumber || '',
+      }];
+    }
+
     setFormData({
       vendorName: vendor.vendorName,
       taxId: vendor.taxId || '',
@@ -130,6 +170,7 @@ export const VendorsPanel: React.FC = () => {
       accountName: vendor.accountName || '',
       accountNumber: vendor.accountNumber || '',
       isActive: vendor.isActive !== undefined ? Boolean(vendor.isActive) : true,
+      bankAccounts: initialAccounts,
     });
     setFormErrors({});
     setIsModalOpen(true);
@@ -141,6 +182,18 @@ export const VendorsPanel: React.FC = () => {
     setIsModalOpen(false);
     setEditingVendor(null);
     setFormErrors({});
+  };
+
+  // 下拉選單選擇銀行
+  const handleBankSelect = (codeStr: string) => {
+    const matchedBank = findBankByCode(banks, codeStr);
+    setFormData((prev) => ({
+      ...prev,
+      bankCode: codeStr,
+      bankName: matchedBank ? matchedBank.name : prev.bankName,
+      branchCode: '',
+      branchName: '',
+    }));
   };
 
   // 銀行代碼變更連動
@@ -156,6 +209,16 @@ export const VendorsPanel: React.FC = () => {
     }));
   };
 
+  // 下拉選單選擇分行
+  const handleBranchSelect = (branchCodeStr: string) => {
+    const matchedBranch = findBranchByCode(currentBankBranches, branchCodeStr);
+    setFormData((prev) => ({
+      ...prev,
+      branchCode: branchCodeStr,
+      branchName: matchedBranch ? matchedBranch.name : prev.branchName,
+    }));
+  };
+
   // 分行代碼變更連動
   const handleBranchCodeChange = (branchStr: string) => {
     const cleanBranch = branchStr.trim();
@@ -164,6 +227,65 @@ export const VendorsPanel: React.FC = () => {
       ...prev,
       branchCode: cleanBranch,
       branchName: matchedBranch ? matchedBranch.name : prev.branchName,
+    }));
+  };
+
+  // 清空當前輸入欄位之銀行與帳號
+  const handleClearFormBankData = () => {
+    setFormData((prev) => ({
+      ...prev,
+      bankCode: '',
+      bankName: '',
+      branchCode: '',
+      branchName: '',
+      accountName: '',
+      accountNumber: '',
+    }));
+  };
+
+  // 載入某筆已登記帳號至下方欄位以供編輯
+  const handleLoadAccountToForm = (acc: VendorBankAccount) => {
+    setFormData((prev) => ({
+      ...prev,
+      bankCode: acc.bankCode || '',
+      bankName: acc.bankName || '',
+      branchCode: acc.branchCode || '',
+      branchName: acc.branchName || '',
+      accountName: acc.accountName || '',
+      accountNumber: acc.accountNumber || '',
+    }));
+  };
+
+  // 從已登記帳號清單中刪除一組帳號
+  const handleDeleteVendorAccount = (idxToDelete: number) => {
+    const target = formData.bankAccounts[idxToDelete];
+    if (!target) return;
+    const bDisplay = `${target.bankName || ''}${target.bankCode ? ` (${target.bankCode})` : ''}`;
+    if (!window.confirm(`確定要刪除此組已登記帳號嗎？\n\n金融機構：${bDisplay || '未指定'}\n帳號：${target.accountNumber || '無'}`)) {
+      return;
+    }
+
+    const updatedAccounts = formData.bankAccounts.filter((_, i) => i !== idxToDelete);
+    const nextPrimary = updatedAccounts[0];
+
+    // 若當前輸入欄位剛好是這筆被刪除的帳號，切換至剩餘的第一筆或清空
+    const isEditingThisAcc =
+      formData.accountNumber === target.accountNumber &&
+      (formData.bankCode === target.bankCode || formData.bankName === target.bankName);
+
+    setFormData((prev) => ({
+      ...prev,
+      bankAccounts: updatedAccounts,
+      ...(isEditingThisAcc
+        ? {
+            bankCode: nextPrimary ? nextPrimary.bankCode : '',
+            bankName: nextPrimary ? nextPrimary.bankName : '',
+            branchCode: nextPrimary ? nextPrimary.branchCode : '',
+            branchName: nextPrimary ? nextPrimary.branchName : '',
+            accountName: nextPrimary ? nextPrimary.accountName : '',
+            accountNumber: nextPrimary ? nextPrimary.accountNumber : '',
+          }
+        : {}),
     }));
   };
 
@@ -194,18 +316,48 @@ export const VendorsPanel: React.FC = () => {
     setApiError(null);
 
     try {
+      // 整合目前輸入欄位與 bankAccounts 清單
+      let finalAccounts = [...formData.bankAccounts];
+      const curBankCode = formData.bankCode.trim();
+      const curBankName = formData.bankName.trim();
+      const curBranchCode = formData.branchCode.trim();
+      const curBranchName = formData.branchName.trim();
+      const curAccountName = formData.accountName.trim();
+      const curAccountNumber = formData.accountNumber.trim();
+
+      if (curAccountNumber || curBankCode || curBankName) {
+        const curAcc: VendorBankAccount = {
+          bankCode: curBankCode,
+          bankName: curBankName,
+          branchCode: curBranchCode,
+          branchName: curBranchName,
+          accountName: curAccountName || formData.vendorName.trim(),
+          accountNumber: curAccountNumber,
+        };
+        const curKey = getBankAccountKey(curAcc);
+        const matchIdx = finalAccounts.findIndex((a) => getBankAccountKey(a) === curKey);
+        if (matchIdx >= 0) {
+          finalAccounts[matchIdx] = curAcc;
+        } else {
+          finalAccounts.push(curAcc);
+        }
+      }
+
+      const primaryAcc = finalAccounts[0];
+
       // 確保所有代碼與帳號欄位維持純 string，絕不轉換為數字
-      const payload = {
+      const payload: SaveVendorPayload = {
         vendorId: editingVendor ? editingVendor.vendorId : undefined,
         vendorName: formData.vendorName.trim(),
         taxId: formData.taxId.trim(),
         entityType: formData.entityType.trim() || '公司',
-        bankCode: formData.bankCode.trim(),
-        bankName: formData.bankName.trim(),
-        branchCode: formData.branchCode.trim(),
-        branchName: formData.branchName.trim(),
-        accountName: formData.accountName.trim(),
-        accountNumber: formData.accountNumber.trim(),
+        bankCode: primaryAcc ? (primaryAcc.bankCode || '') : curBankCode,
+        bankName: primaryAcc ? (primaryAcc.bankName || '') : curBankName,
+        branchCode: primaryAcc ? (primaryAcc.branchCode || '') : curBranchCode,
+        branchName: primaryAcc ? (primaryAcc.branchName || '') : curBranchName,
+        accountName: primaryAcc ? (primaryAcc.accountName || '') : curAccountName,
+        accountNumber: primaryAcc ? (primaryAcc.accountNumber || '') : curAccountNumber,
+        bankAccounts: finalAccounts,
         isActive: formData.isActive,
       };
 
@@ -563,55 +715,155 @@ export const VendorsPanel: React.FC = () => {
 
               {/* 金融機構資訊區塊 */}
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-                <div className="text-xs font-semibold text-slate-700">銀行匯款帳戶資訊</div>
+                <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                    <Landmark className="w-3.5 h-3.5 text-slate-600" />
+                    <span>銀行匯款帳戶資訊</span>
+                  </div>
+                  {(formData.bankCode || formData.bankName || formData.accountNumber) && (
+                    <button
+                      type="button"
+                      onClick={handleClearFormBankData}
+                      className="text-[11px] text-slate-500 hover:text-red-600 px-2 py-0.5 rounded border border-slate-200 hover:border-red-200 hover:bg-red-50 transition-colors flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      清空帳戶資料
+                    </button>
+                  )}
+                </div>
 
-                {/* 銀行代碼與名稱 */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">金融機構代碼 (3 碼)</label>
+                {/* 若有已儲存帳號，顯示清單供快速載入或刪除 */}
+                {formData.bankAccounts && formData.bankAccounts.length > 0 && (
+                  <div className="p-2.5 bg-white border border-slate-200 rounded-lg space-y-1.5">
+                    <div className="text-[11px] font-semibold text-slate-600">
+                      已登記匯款帳號（共 {formData.bankAccounts.length} 組）：
+                    </div>
+                    {formData.bankAccounts.map((acc, idx) => {
+                      const curKey = getBankAccountKey({
+                        bankCode: formData.bankCode,
+                        bankName: formData.bankName,
+                        branchCode: formData.branchCode,
+                        branchName: formData.branchName,
+                        accountNumber: formData.accountNumber,
+                      });
+                      const isCurrent = getBankAccountKey(acc) === curKey;
+                      const bankDisplay = `${acc.bankName || ''}${acc.bankCode ? ` (${acc.bankCode})` : ''}`;
+                      const branchDisplay = `${acc.branchName || ''}${acc.branchCode ? ` (${acc.branchCode})` : ''}`;
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`flex items-center justify-between p-2 rounded border text-xs transition-colors ${
+                            isCurrent
+                              ? 'bg-blue-50 border-blue-200 text-blue-900 font-medium'
+                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div
+                            className="flex-1 cursor-pointer"
+                            onClick={() => handleLoadAccountToForm(acc)}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold">{bankDisplay || '未指定銀行'}</span>
+                              {branchDisplay && <span className="text-slate-500">／ {branchDisplay}</span>}
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                              帳號：<span className="font-semibold text-slate-800">{acc.accountNumber || '無帳號'}</span>
+                              {acc.accountName && <span className="ml-2 font-normal">戶名：{acc.accountName}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleLoadAccountToForm(acc)}
+                              className="px-2 py-0.5 text-[11px] text-blue-600 hover:bg-blue-100 rounded border border-blue-200 transition-colors"
+                            >
+                              載入編輯
+                            </button>
+                            <button
+                              type="button"
+                              title="刪除此組已登記帳號"
+                              onClick={() => handleDeleteVendorAccount(idx)}
+                              className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 銀行代碼與名稱雙向連動 */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                  <div className="sm:col-span-4">
+                    <label className="block text-[11px] text-slate-500 mb-1">機構代碼 (3 碼)</label>
                     <input
                       type="text"
                       maxLength={3}
                       value={formData.bankCode}
                       onChange={(e) => handleBankCodeChange(e.target.value)}
-                      placeholder="例如 007"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                      placeholder="例如 013, 007"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">機構名稱</label>
-                    <input
-                      type="text"
-                      value={formData.bankName}
-                      onChange={(e) => setFormData({ ...formData, bankName: e.target.value })}
-                      placeholder="例如 第一商業銀行"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                    />
+                  <div className="sm:col-span-8">
+                    <label className="block text-[11px] text-slate-500 mb-1">機構名稱 (下拉選取或自動帶入)</label>
+                    <select
+                      value={currentBank ? currentBank.code : ''}
+                      onChange={(e) => handleBankSelect(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">-- 請選擇金融機構 ({banks.length} 家) --</option>
+                      {banks.map((b) => (
+                        <option key={b.code} value={b.code}>
+                          {b.code} {b.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
-                {/* 分行代碼與名稱 */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">分行代碼 (4 碼)</label>
+                {/* 分行代碼與名稱雙向連動 */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                  <div className="sm:col-span-4">
+                    <label className="block text-[11px] text-slate-500 mb-1">分支代碼 (4 碼)</label>
                     <input
                       type="text"
                       maxLength={4}
                       value={formData.branchCode}
                       onChange={(e) => handleBranchCodeChange(e.target.value)}
-                      placeholder="例如 1440"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                      placeholder="例如 0545, 1440"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">分行名稱</label>
-                    <input
-                      type="text"
-                      value={formData.branchName}
-                      onChange={(e) => setFormData({ ...formData, branchName: e.target.value })}
-                      placeholder="例如 城東分行"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                    />
+                  <div className="sm:col-span-8">
+                    <label className="block text-[11px] text-slate-500 mb-1">
+                      分支名稱 {currentBankBranches.length > 0 ? `(已篩選 ${currentBankBranches.length} 家分行)` : ''}
+                    </label>
+                    {currentBankBranches.length > 0 ? (
+                      <select
+                        value={formData.branchCode}
+                        onChange={(e) => handleBranchSelect(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">-- 請選擇分行 ({currentBankBranches.length} 家) --</option>
+                        {currentBankBranches.map((br) => (
+                          <option key={br.code} value={br.code}>
+                            {br.code} {br.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={formData.branchName}
+                        onChange={(e) => setFormData({ ...formData, branchName: e.target.value })}
+                        placeholder="請先選擇金融機構或手動輸入分行名稱"
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500"
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -623,18 +875,18 @@ export const VendorsPanel: React.FC = () => {
                       type="text"
                       value={formData.accountName}
                       onChange={(e) => setFormData({ ...formData, accountName: e.target.value })}
-                      placeholder="匯款戶名"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                      placeholder="匯款戶名 (預設同廠商名稱)"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">帳號 (完整輸入，保持文字)</label>
+                    <label className="block text-[11px] text-slate-500 mb-1">帳號 (保留前置 0，純文字)</label>
                     <input
                       type="text"
                       value={formData.accountNumber}
                       onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value })}
-                      placeholder="完整帳號 (含前導 0)"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                      placeholder="完整帳號 (含分行代碼與前置 0)"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
