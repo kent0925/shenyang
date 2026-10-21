@@ -433,6 +433,28 @@ export const PaymentRequestForm: React.FC<Props> = ({
   const isNewAccountMode = selectedStoredAccountIndex === -1;
   const showBankInputFields = !hasStoredAccounts || isNewAccountMode;
 
+  // 自動同步已登記帳號之最新完整戶名（防範歷史資料或暫存將「東勛工程行陳品嘉」截斷為廠商名稱）
+  useEffect(() => {
+    if (selectedStoredAccountIndex >= 0) {
+      const activeStoredAcc = vendorBankAccounts[selectedStoredAccountIndex];
+      if (activeStoredAcc && activeStoredAcc.accountName) {
+        const storedAccName = activeStoredAcc.accountName.trim();
+        const curAccName = (data.accountName || data.bankAccount?.accountName || '').trim();
+        if (storedAccName && storedAccName !== curAccName) {
+          onChange({
+            ...data,
+            accountName: storedAccName,
+            accountNameSameAsVendor: storedAccName === (data.vendor || '').trim(),
+            bankAccount: {
+              ...data.bankAccount,
+              accountName: storedAccName,
+            },
+          });
+        }
+      }
+    }
+  }, [selectedStoredAccountIndex, vendorBankAccounts, data.accountName, data.bankAccount?.accountName]);
+
   // 切換已儲存之匯款帳號
   const handleSelectStoredAccount = (acc: VendorBankAccount) => {
     const bCode = acc.bankCode || '';
@@ -1517,7 +1539,8 @@ export const PaymentRequestForm: React.FC<Props> = ({
                   return (
                     <div
                       key={accKey || idx}
-                      className={`flex items-start justify-between gap-2 p-2 rounded-lg border text-xs transition-colors ${
+                      onClick={() => handleSelectStoredAccount(acc)}
+                      className={`flex items-start justify-between gap-2 p-2 rounded-lg border text-xs transition-colors cursor-pointer ${
                         isSelected
                           ? 'bg-blue-50 border-blue-300 text-blue-900 font-medium'
                           : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'

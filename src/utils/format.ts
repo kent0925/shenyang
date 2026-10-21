@@ -7,7 +7,14 @@ export function formatBankAccount(
   let bankCode = (data?.bankCode || info?.bankCode || '').trim();
   const bankName = (data?.bankName || info?.bankName || '').trim();
   const branchName = (data?.branchName || info?.branch || '').trim();
-  const accountName = (data?.accountName || info?.accountName || '').trim();
+  // 完整保全戶名：若同時存在多筆，優先選取最完整（含負責人姓名）之戶名，絕不擅自縮減
+  const candidateNames = [
+    data?.bankAccount?.accountName,
+    data?.accountName,
+    info?.accountName
+  ].map(n => (n || '').trim()).filter(Boolean);
+  candidateNames.sort((a, b) => b.length - a.length);
+  const accountName = candidateNames[0] || '';
   let accountNumber = (data?.accountNumber || info?.accountNumber || '').trim();
 
   // 1. 銀行代碼都要三碼，若為 0 也要顯示（例如 13 -> 013, 4 -> 004）
