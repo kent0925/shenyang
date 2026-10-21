@@ -341,18 +341,16 @@ export const PaymentRequestForm: React.FC<Props> = ({
     const accNum = primaryAcc?.accountNumber || v.accountNumber || '';
 
     const vName = (v.vendorName || '').trim();
-    const rawAccName = (primaryAcc?.accountName ?? v.accountName ?? '').trim();
+    const rawAccName = (primaryAcc?.accountName || v.accountName || '').trim();
     let isSame = true;
-    let finalAccName = v.vendorName || '';
+    let finalAccName = rawAccName || v.vendorName || '';
 
-    if (rawAccName) {
-      if (rawAccName === vName) {
-        isSame = true;
-        finalAccName = v.vendorName || '';
-      } else {
-        isSame = false;
-        finalAccName = (primaryAcc?.accountName ?? v.accountName ?? '').trim();
-      }
+    if (rawAccName && rawAccName !== vName) {
+      isSame = false;
+      finalAccName = rawAccName;
+    } else if (rawAccName) {
+      isSame = true;
+      finalAccName = rawAccName;
     } else {
       isSame = true;
       finalAccName = v.vendorName || '';
@@ -446,15 +444,15 @@ export const PaymentRequestForm: React.FC<Props> = ({
     const rawAccName = (acc.accountName || '').trim();
     const vendorName = (data.vendor || '').trim();
     let isSame = true;
-    let finalAccName = data.vendor || '';
+    let finalAccName = rawAccName || data.vendor || '';
 
     if (rawAccName !== '') {
       if (rawAccName === vendorName) {
         isSame = true;
-        finalAccName = data.vendor || '';
+        finalAccName = rawAccName;
       } else {
         isSame = false;
-        finalAccName = acc.accountName || '';
+        finalAccName = rawAccName;
       }
     } else {
       isSame = true;
@@ -1203,14 +1201,17 @@ export const PaymentRequestForm: React.FC<Props> = ({
                           updates.branchCode = matchedVend.branchCode || '';
                           updates.branchName = matchedVend.branchName || '';
                           updates.accountNumber = matchedVend.accountNumber || '';
-                          updates.accountName = matchedVend.accountName || matchedVend.vendorName;
+                          const primAcc = (matchedVend.bankAccounts && matchedVend.bankAccounts.length > 0) ? matchedVend.bankAccounts[0] : undefined;
+                          const rAccName = primAcc?.accountName || matchedVend.accountName || matchedVend.vendorName;
+                          updates.accountName = rAccName;
+                          updates.accountNameSameAsVendor = rAccName === matchedVend.vendorName;
                           updates.bankAccount = {
                             type: 'code',
-                            bankCode: matchedVend.bankCode || '',
-                            bankName: matchedVend.bankName || '',
-                            branch: matchedVend.branchName || matchedVend.branchCode || '',
-                            accountNumber: matchedVend.accountNumber || '',
-                            accountName: matchedVend.accountName || matchedVend.vendorName,
+                            bankCode: primAcc?.bankCode || matchedVend.bankCode || '',
+                            bankName: primAcc?.bankName || matchedVend.bankName || '',
+                            branch: primAcc?.branchName || matchedVend.branchName || matchedVend.branchCode || '',
+                            accountNumber: primAcc?.accountNumber || matchedVend.accountNumber || '',
+                            accountName: rAccName,
                           };
                         }
                       }
@@ -1510,8 +1511,9 @@ export const PaymentRequestForm: React.FC<Props> = ({
                 {vendorBankAccounts.map((acc, idx) => {
                   const accKey = getBankAccountKey(acc);
                   const isSelected = selectedStoredAccountIndex === idx;
-                  const bankDisplay = `${acc.bankName || ''}${acc.bankCode ? ` (${acc.bankCode})` : ''}`;
-                  const branchDisplay = `${acc.branchName || ''}${acc.branchCode ? ` (${acc.branchCode})` : ''}`;
+                  const formattedCode = acc.bankCode ? (acc.bankCode.length <= 3 ? acc.bankCode.padStart(3, '0') : acc.bankCode.slice(0, 3).padStart(3, '0')) : '';
+                  const bankDisplay = `${acc.bankName || ''}${formattedCode ? ` (${formattedCode})` : ''}`;
+                  const branchDisplay = acc.branchName || (acc.branchCode ? `(${acc.branchCode})` : '');
                   return (
                     <div
                       key={accKey || idx}
@@ -1530,13 +1532,13 @@ export const PaymentRequestForm: React.FC<Props> = ({
                           className="mt-0.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
                         <div className="flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                             <span className="font-semibold">{bankDisplay || '未指定銀行'}</span>
-                            {branchDisplay && <span className="text-slate-500">／ {branchDisplay}</span>}
+                            {branchDisplay && <span className="text-slate-600">{branchDisplay}</span>}
                           </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">
-                            帳號：<span className="font-mono text-slate-800 font-semibold">{acc.accountNumber || '無帳號'}</span>
-                            {acc.accountName && <span className="ml-3">戶名：{acc.accountName}</span>}
+                          <div className="text-[11px] text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                            <span>帳號：<span className="font-mono text-slate-800 font-semibold">{acc.accountNumber || '無帳號'}</span></span>
+                            {acc.accountName && <span>戶名：<span className="text-slate-800 font-medium">{acc.accountName}</span></span>}
                           </div>
                         </div>
                       </label>
@@ -1693,11 +1695,7 @@ export const PaymentRequestForm: React.FC<Props> = ({
                     type="text"
                     readOnly={data.accountNameSameAsVendor !== false}
                     placeholder={data.accountNameSameAsVendor !== false ? '同受款人／廠商名稱' : '請輸入自訂戶名'}
-                    value={
-                      data.accountNameSameAsVendor !== false
-                        ? data.vendor
-                        : data.accountName || data.bankAccount?.accountName || ''
-                    }
+                    value={data.accountName || data.bankAccount?.accountName || (data.accountNameSameAsVendor !== false ? data.vendor : '')}
                     onChange={(e) => handleAccountNameChange(e.target.value)}
                     className={`w-full px-2.5 py-1.5 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 ${
                       data.accountNameSameAsVendor !== false ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'bg-white'

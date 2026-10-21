@@ -215,9 +215,8 @@ export function deserializePaymentRequest(record: FormRecord): PaymentRequestDat
       }
     }
 
-    const resolvedAccountName = resolvedAccountNameSameAsVendor
-      ? resolvedVendor
-      : rawAccountName;
+    // 絕對完整保留原始戶名，絕不可擅自覆蓋或縮減已登記之完整戶名（例如：東勛工程行陳品嘉）
+    const resolvedAccountName = rawAccountName && rawAccountName.trim() !== '' ? rawAccountName.trim() : resolvedVendor;
 
     // 與 INITIAL_PAYMENT_REQUEST_DATA 進行深層合併保護
     return {

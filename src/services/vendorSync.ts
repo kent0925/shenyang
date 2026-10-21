@@ -159,8 +159,8 @@ export async function syncVendorMasterAfterPaymentSave(data: PaymentRequestData)
           hasUpgrade = true;
         }
 
-        // 戶名：若舊的為空，補齊
-        if (!old.accountName && currentAcc.accountName) {
+        // 戶名：若舊的為空或舊的只是廠商名稱而新的是更完整戶名（如「東勛工程行陳品嘉」），進行升級更新
+        if (currentAcc.accountName && (!old.accountName || (old.accountName === matchedVendor.vendorName && currentAcc.accountName !== matchedVendor.vendorName))) {
           updatedAcc.accountName = currentAcc.accountName;
           hasUpgrade = true;
         }
