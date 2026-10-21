@@ -38,257 +38,382 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
   return (
     <div
       id={id}
-      className="bg-white text-slate-900 p-8 max-w-[850px] mx-auto text-xs leading-normal border border-slate-300 shadow-sm print:border-none print:shadow-none font-sans"
-      style={{ minHeight: '1120px' }}
+      className="bg-white text-black p-6 mx-auto text-[11px] leading-normal border border-slate-300 shadow-sm print:border-none print:shadow-none"
+      style={{
+        width: '794px',
+        minHeight: '1120px',
+        fontFamily: '"BiauKai", "DFKai-SB", "PMingLiU", "MingLiU", serif',
+        boxSizing: 'border-box'
+      }}
     >
-      {/* 抬頭 */}
+      {/* 抬頭 (Row 1-2) */}
       <div className="text-center mb-1">
         <h1 className="text-xl font-bold tracking-wider">{data.company || '昇陽開發實業股份有限公司'}</h1>
-        <h2 className="text-lg font-bold tracking-widest mt-1">請　款　單</h2>
+        <h2 className="text-lg font-bold tracking-[0.5em] mt-1 pl-[0.5em]">請　款　單</h2>
       </div>
 
-      {/* 申請日 */}
-      <div className="flex justify-end mb-1 text-xs font-mono">
+      {/* 申請日 (Row 3) */}
+      <div className="flex justify-end mb-1 text-[11px]">
         <span>申請日：</span>
-        <span className="inline-block border-b border-slate-700 min-w-[28px] text-center">{applyDateParts?.rocYear || '　'}</span>
+        <span className="inline-block border-b border-black min-w-[28px] text-center font-mono">{applyDateParts?.rocYear || '　'}</span>
         <span>年</span>
-        <span className="inline-block border-b border-slate-700 min-w-[20px] text-center">{applyDateParts?.month || '　'}</span>
+        <span className="inline-block border-b border-black min-w-[20px] text-center font-mono">{applyDateParts?.month || '　'}</span>
         <span>月</span>
-        <span className="inline-block border-b border-slate-700 min-w-[20px] text-center">{applyDateParts?.day || '　'}</span>
+        <span className="inline-block border-b border-black min-w-[20px] text-center font-mono">{applyDateParts?.day || '　'}</span>
         <span>日</span>
       </div>
 
-      {/* 主表格 */}
-      <table className="w-full border-collapse border-2 border-slate-900 text-xs">
+      {/* 主表格 (Row 4-37) 嚴格100%對照母版Excel格位 (26欄 x 37列拓撲) */}
+      <table className="w-full border-collapse border border-black text-[11px] table-fixed">
+        <colgroup>
+          <col style={{ width: '3.625%' }} />  {/* E: 付款明細 / 單據粘貼處 */}
+          <col style={{ width: '4.000%' }} />  {/* F: 期次 / 本期 / 估驗 / 特殊要求 / 請款說明 */}
+          <col style={{ width: '7.000%' }} />  {/* G: 期次值 / 合約金額與累計實支標題 */}
+          <col style={{ width: '14.125%' }} /> {/* H: (1)請款額 / 合約金額數值 */}
+          <col style={{ width: '2.625%' }} />  {/* I: (2) / 餘額或超支標題 */}
+          <col style={{ width: '1.875%' }} />  {/* J: (2) / 餘額數值 */}
+          <col style={{ width: '8.125%' }} />  {/* K: (2) / 餘額數值 */}
+          <col style={{ width: '10.125%' }} /> {/* L: (3)預付款沖銷 */}
+          <col style={{ width: '2.500%' }} />  {/* M: (3) / 預算查認者標題 */}
+          <col style={{ width: '3.250%' }} />  {/* N: (4)罰扣 / 預算查認空白簽名 */}
+          <col style={{ width: '2.500%' }} />  {/* O: (4) / 預算查認空白簽名 */}
+          <col style={{ width: '2.500%' }} />  {/* P: (4) / 預算查認空白簽名 */}
+          <col style={{ width: '2.500%' }} />  {/* Q: (4) / 預算查認空白簽名 */}
+          <col style={{ width: '2.500%' }} />  {/* R: (4) / 預算查認空白簽名 */}
+          <col style={{ width: '2.500%' }} />  {/* S: (4) / 預算查認空白簽名 */}
+          <col style={{ width: '2.750%' }} />  {/* T: (5)實付金額 / 會同驗收者標題 */}
+          <col style={{ width: '2.875%' }} />  {/* U: 主管簽核 */}
+          <col style={{ width: '2.625%' }} />  {/* V: 主管簽核 */}
+          <col style={{ width: '2.625%' }} />  {/* W: 主管簽核 */}
+          <col style={{ width: '4.250%' }} />  {/* X: 主管簽核 */}
+          <col style={{ width: '2.625%' }} />  {/* Y: 申請部門 / 經辦 / 財務 / 總經理 / 董事長標題 */}
+          <col style={{ width: '2.750%' }} />  {/* Z: 經辦 / 複核 / 主管標題 / 各簽名空白欄 */}
+          <col style={{ width: '3.000%' }} />  {/* AA */}
+          <col style={{ width: '3.000%' }} />  {/* AB */}
+          <col style={{ width: '3.000%' }} />  {/* AC */}
+          <col style={{ width: '3.250%' }} />  {/* AD */}
+        </colgroup>
         <tbody>
-          {/* 列 4~5：專案代號/名稱、請購單編號、受款人/廠商、申請部門、經辦 */}
-          <tr className="border-b border-slate-900">
-            <td className="w-24 bg-slate-100 font-bold p-1 text-center border-r border-slate-900">專案代號/名稱</td>
-            <td className="p-1 border-r border-slate-900 font-medium">{data.project}</td>
-            <td className="w-24 bg-slate-100 font-bold p-1 text-center border-r border-slate-900">請購單編號</td>
-            <td className="w-28 p-1 border-r border-slate-900 font-mono">{data.requisitionNumber}</td>
-            <td className="w-24 bg-slate-100 font-bold p-1 text-center border-r border-slate-900">受款人/廠商</td>
-            <td colSpan={2} className="p-1 border-r border-slate-900 font-medium">
-              <div>{data.vendor}</div>
-              {data.vendorTaxId?.trim() ? (
-                <div className="text-[10px] text-slate-600 font-mono">統編：{data.vendorTaxId.trim()}</div>
-              ) : null}
-            </td>
-            <td rowSpan={3} className="w-6 bg-slate-100 font-bold p-0.5 text-center border-r border-slate-900 align-middle leading-tight text-[11px]">
+          {/* Row 4: 標題列 (專案代號/名稱、請購單編號、受款人/廠商、申請部門 rs=13、經辦 rs=4) */}
+          <tr className="border-b border-black h-6">
+            <td colSpan={4} className="border-r border-black p-0.5 text-center font-bold align-middle">專案代號/名稱</td>
+            <td colSpan={5} className="border-r border-black p-0.5 text-center font-bold align-middle">請購單編號</td>
+            <td colSpan={11} className="border-r border-black p-0.5 text-center font-bold align-middle">受款人/廠商</td>
+            {/* Y4:Y16 申請部門 (跨13列) */}
+            <td rowSpan={13} className="border-r border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
               申<br/>請<br/>部<br/>門
             </td>
-            <td className="w-16 p-1 text-center border-slate-900 align-top">
-              <div className="font-bold mb-3">經　　辦</div>
+            {/* Z4:Z7 經辦 (跨4列) */}
+            <td rowSpan={4} className="border-r border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
+              經<br/><br/>辦
+            </td>
+            {/* AA4:AD7 經辦簽名格 (跨4列) */}
+            <td colSpan={4} rowSpan={4} className="p-0.5 align-middle"></td>
+          </tr>
+
+          {/* Row 5: 專案名稱、請購單號、廠商名稱 */}
+          <tr className="border-b border-black h-6">
+            <td colSpan={4} className="border-r border-black p-0.5 text-center align-middle font-medium">{data.project}</td>
+            <td colSpan={5} className="border-r border-black p-0.5 text-center align-middle font-mono">{data.requisitionNumber}</td>
+            <td colSpan={11} className="border-r border-black p-0.5 text-center align-middle font-medium">
+              <div>{data.vendor}</div>
+              {data.vendorTaxId?.trim() ? (
+                <div className="text-[10px] text-slate-700 font-mono">（統編：{data.vendorTaxId.trim()}）</div>
+              ) : null}
             </td>
           </tr>
 
-          {/* 列 6~8：費用歸屬部門、合約號、受款人匯款帳號、複核 */}
-          <tr className="border-b border-slate-900">
-            <td className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900">費用歸屬部門</td>
-            <td className="p-1 border-r border-slate-900">{data.department}</td>
-            <td className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900">合約/訂購單編號</td>
-            <td className="p-1 border-r border-slate-900 font-mono">{data.contractNumber}</td>
-            <td className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900">受款人/廠商匯款帳號</td>
-            <td colSpan={2} className="p-1 border-r border-slate-900 font-mono whitespace-pre-wrap leading-tight text-[11px]">{formattedBank}</td>
-            <td className="p-1 text-center border-slate-900 align-top">
-              <div className="font-bold mb-3">複　　核</div>
-            </td>
+          {/* Row 6: 費用歸屬部門、合約/訂購單編號、受款人/廠商匯款帳號 */}
+          <tr className="border-b border-black h-6">
+            <td colSpan={4} className="border-r border-black p-0.5 text-center font-bold align-middle">費用歸屬部門</td>
+            <td colSpan={5} className="border-r border-black p-0.5 text-center font-bold align-middle">合約/訂購單編號</td>
+            <td colSpan={11} className="border-r border-black p-0.5 text-center font-bold align-middle">受款人/廠商匯款帳號</td>
           </tr>
 
-          {/* 列 9~10：費用性質、合約總額、付款到期日 */}
-          <tr className="border-b-2 border-slate-900">
-            <td className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900">費用性質</td>
-            <td className="p-1 border-r border-slate-900">{data.expenseNature}</td>
-            <td className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900">合約/訂購單總額</td>
-            <td className="p-1 border-r border-slate-900 font-mono text-right">{formatCurrency(data.contractTotal)}</td>
-            <td className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900">付款到期日</td>
-            <td colSpan={2} className="p-1 border-r border-slate-900 font-mono">
-              {dueDateParts ? `${dueDateParts.rocYear} 年 ${dueDateParts.month} 月 ${dueDateParts.day} 日` : '　年　月　日'}
-            </td>
-            <td className="p-1 text-center border-slate-900"></td>
+          {/* Row 7: 內容列 (rs=2) */}
+          <tr className="border-b border-black h-6">
+            <td colSpan={4} rowSpan={2} className="border-r border-black p-0.5 text-center align-middle">{data.department}</td>
+            <td colSpan={5} rowSpan={2} className="border-r border-black p-0.5 text-center align-middle font-mono">{data.contractNumber}</td>
+            <td colSpan={11} rowSpan={2} className="border-r border-black p-1 text-center align-middle whitespace-pre-wrap leading-tight text-[10px] font-mono">{formattedBank}</td>
           </tr>
 
-          {/* 列 11~12：付款明細標題列（含期次） */}
-          <tr className="bg-slate-100 font-bold text-center border-b border-slate-900">
-            <td rowSpan={4} className="bg-slate-100 font-bold p-0.5 text-center border-r border-slate-900 align-middle leading-tight text-[11px] w-6">
+          {/* Row 8: 複核 (rs=3) */}
+          <tr className="border-b border-black h-6">
+            {/* Z8:Z10 複核 (跨3列) */}
+            <td rowSpan={3} className="border-r border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
+              複<br/><br/>核
+            </td>
+            {/* AA8:AD10 複核簽名格 (跨3列) */}
+            <td colSpan={4} rowSpan={3} className="p-0.5 align-middle"></td>
+          </tr>
+
+          {/* Row 9: 費用性質、合約/訂購單總額、付款到期日 */}
+          <tr className="border-b border-black h-6">
+            <td colSpan={4} className="border-r border-black p-0.5 text-center font-bold align-middle">費用性質</td>
+            <td colSpan={5} className="border-r border-black p-0.5 text-center font-bold align-middle">合約/訂購單總額</td>
+            <td colSpan={11} className="border-r border-black p-0.5 text-center font-bold align-middle">付款到期日</td>
+          </tr>
+
+          {/* Row 10: 費用性質內容、合約總額、付款到期日年月日 */}
+          <tr className="border-b border-black h-6">
+            <td colSpan={4} className="border-r border-black p-0.5 text-center align-middle">{data.expenseNature}</td>
+            <td colSpan={5} className="border-r border-black p-0.5 text-right align-middle font-mono pr-2">{formatCurrency(data.contractTotal)}</td>
+            <td colSpan={2} className="p-0.5 text-center align-middle font-mono">{dueDateParts?.rocYear || '　'}</td>
+            <td className="p-0.5 text-center align-middle">年</td>
+            <td colSpan={2} className="p-0.5 text-center align-middle font-mono">{dueDateParts?.month || '　'}</td>
+            <td className="p-0.5 text-center align-middle">月</td>
+            <td colSpan={2} className="p-0.5 text-center align-middle font-mono">{dueDateParts?.day || '　'}</td>
+            <td className="p-0.5 text-center align-middle">日</td>
+            <td colSpan={2} className="border-r border-black p-0.5 text-center align-middle"></td>
+          </tr>
+
+          {/* Row 11: 付款明細標題列 (1)~(5) 與 期次、主管 (rs=6) */}
+          <tr className="border-b border-black h-6">
+            {/* E11:E16 付款明細 (跨6列) */}
+            <td rowSpan={6} className="border-r border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
               付<br/>款<br/>明<br/>細
             </td>
-            <td className="p-0.5 border-r border-slate-900 w-12 bg-slate-50 font-bold text-center">期次</td>
-            <td className="p-0.5 border-r border-slate-900 w-12 font-mono font-bold text-center text-blue-900 bg-white">
+            {/* F11:F12 期次 (跨2列) */}
+            <td rowSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle">期次</td>
+            {/* G11:G12 期次數值 (跨2列) */}
+            <td rowSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle font-mono">
               {data.installment || '1'}
             </td>
-            <td className="p-1 border-r border-slate-900">（1）</td>
-            <td className="p-1 border-r border-slate-900">（2）</td>
-            <td className="p-1 border-r border-slate-900">（3）</td>
-            <td className="p-1 border-r border-slate-900">（4）</td>
-            <td className="p-1 border-r border-slate-900">（5）=(1)-(2)-(3)-(4)</td>
-            <td rowSpan={4} className="w-16 p-1 text-center border-slate-900 align-middle">
-              <div className="font-bold">主　　管</div>
+            <td className="border-r border-black p-0.5 text-center font-bold align-middle">（1）</td>
+            <td colSpan={3} className="border-r border-black p-0.5 text-center font-bold align-middle">（2）</td>
+            <td colSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle">（3）</td>
+            <td colSpan={6} className="border-r border-black p-0.5 text-center font-bold align-middle">（4）</td>
+            <td colSpan={5} className="border-r border-black p-0.5 text-center font-bold align-middle text-[10px]">（5）=(1)-(2)-(3)-(4)</td>
+            {/* Z11:Z16 主管 (跨6列) */}
+            <td rowSpan={6} className="border-r border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
+              主<br/><br/>管
             </td>
-          </tr>
-          <tr className="bg-slate-50 font-bold text-center border-b border-slate-900 text-[11px]">
-            <td colSpan={2} className="p-0.5 border-r border-slate-900 text-slate-500 font-normal"></td>
-            <td className="p-1 border-r border-slate-900">請款/驗收/預付額</td>
-            <td className="p-1 border-r border-slate-900">保留金額</td>
-            <td className="p-1 border-r border-slate-900">預付款沖銷</td>
-            <td className="p-1 border-r border-slate-900">罰扣（折讓金額）</td>
-            <td className="p-1 border-r border-slate-900 font-bold">實付金額</td>
+            {/* AA11:AD16 主管簽名格 (跨6列) */}
+            <td colSpan={4} rowSpan={6} className="p-0.5 align-middle"></td>
           </tr>
 
-          {/* 列 13~14：本期 估驗/請款 */}
-          <tr className="border-b border-slate-900 text-center font-mono h-7">
-            <td colSpan={2} className="bg-slate-50 font-bold border-r border-slate-900 text-[11px] leading-tight text-center p-1">
-              本期 估驗/請款
-            </td>
-            <td className="p-1 border-r border-slate-900 text-right">{formatCurrency(data.currentAmount)}</td>
-            <td className="p-1 border-r border-slate-900 text-right">{formatCurrency(data.retentionAmount)}</td>
-            <td className="p-1 border-r border-slate-900 text-right">{formatCurrency(data.advanceDeduction)}</td>
-            <td className="p-1 border-r border-slate-900 text-right">{formatCurrency(data.penaltyDiscount)}</td>
-            <td className="p-1 border-r border-slate-900 text-right font-bold text-blue-900 text-xs">
-              {formatCurrency(payable) || '-'}
-            </td>
+          {/* Row 12: 各金額欄位說明 */}
+          <tr className="border-b border-black h-6 text-[10px]">
+            <td className="border-r border-black p-0.5 text-center font-bold align-middle">請款/驗收/預付額</td>
+            <td colSpan={3} className="border-r border-black p-0.5 text-center font-bold align-middle">保留金額</td>
+            <td colSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle">預付款沖銷</td>
+            <td colSpan={6} className="border-r border-black p-0.5 text-center font-bold align-middle">罰扣（折讓金額）</td>
+            <td colSpan={5} className="border-r border-black p-0.5 text-center font-bold align-middle">實付金額</td>
           </tr>
 
-          {/* 列 15~16：截至本期止 累計請款 */}
-          <tr className="border-b-2 border-slate-900 text-center font-mono h-7 text-slate-500">
-            <td colSpan={2} className="bg-slate-50 font-bold border-r border-slate-900 text-[11px] leading-tight text-center p-1">
-              截至本期止 累計請款
-            </td>
-            <td className="p-1 border-r border-slate-900"></td>
-            <td className="p-1 border-r border-slate-900"></td>
-            <td className="p-1 border-r border-slate-900"></td>
-            <td className="p-1 border-r border-slate-900"></td>
-            <td className="p-1 border-r border-slate-900 font-bold">-</td>
+          {/* Row 13: 本期金額列 (rs=2) */}
+          <tr className="border-b border-black h-6">
+            <td colSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle text-[10px]">本期</td>
+            <td rowSpan={2} className="border-r border-black p-0.5 text-right align-middle font-mono pr-2">{formatCurrency(data.currentAmount)}</td>
+            <td colSpan={3} rowSpan={2} className="border-r border-black p-0.5 text-right align-middle font-mono pr-2">{formatCurrency(data.retentionAmount)}</td>
+            <td colSpan={2} rowSpan={2} className="border-r border-black p-0.5 text-right align-middle font-mono pr-2">{formatCurrency(data.advanceDeduction)}</td>
+            <td colSpan={6} rowSpan={2} className="border-r border-black p-0.5 text-right align-middle font-mono pr-2">{formatCurrency(data.penaltyDiscount)}</td>
+            <td colSpan={5} rowSpan={2} className="border-r border-black p-0.5 text-right align-middle font-mono font-bold pr-2">{formatCurrency(payable) || '-'}</td>
           </tr>
 
-          {/* 列 17~18：預算管理（嚴格 100% 重現母版 Excel 結構與直書漢字） */}
-          <tr className="border-b border-slate-900">
-            {/* 1. 預算管理（直書大標題） */}
-            <td rowSpan={2} className="bg-slate-100 font-bold p-0.5 text-center border-r border-slate-900 align-middle leading-tight text-[11px] w-6">
+          {/* Row 14: 估驗/請款 */}
+          <tr className="border-b border-black h-6">
+            <td colSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle text-[10px]">估驗/請款</td>
+          </tr>
+
+          {/* Row 15: 截至本期止金額列 (rs=2) */}
+          <tr className="border-b border-black h-6">
+            <td colSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle text-[10px]">截至本期止</td>
+            <td rowSpan={2} className="border-r border-black p-0.5 text-right align-middle font-mono pr-2"></td>
+            <td colSpan={3} rowSpan={2} className="border-r border-black p-0.5 text-right align-middle font-mono pr-2"></td>
+            <td colSpan={2} rowSpan={2} className="border-r border-black p-0.5 text-right align-middle font-mono pr-2"></td>
+            <td colSpan={6} rowSpan={2} className="border-r border-black p-0.5 text-right align-middle font-mono pr-2"></td>
+            <td colSpan={5} rowSpan={2} className="border-r border-black p-0.5 text-right align-middle font-mono font-bold pr-2">-</td>
+          </tr>
+
+          {/* Row 16: 累計請款 */}
+          <tr className="border-b border-black h-6">
+            <td colSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle text-[10px]">累計請款</td>
+          </tr>
+
+          {/* Row 17: 預算管理 (Row 17-18) */}
+          <tr className="border-b border-black h-6">
+            {/* E17:F18 預算管理 (跨2列) */}
+            <td colSpan={2} rowSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
               預<br/>算<br/>管<br/>理
             </td>
-            {/* 2. 合約金額/預算金額 標題 */}
-            <td colSpan={2} className="bg-slate-50 p-1 border-r border-slate-900 font-bold text-center text-[10px] leading-tight">
+            {/* G17: 合約金額/預算金額 標題 */}
+            <td className="border-r border-black p-0.5 text-center font-bold align-middle text-[10px] leading-tight">
               合約金額<br/>/預算金額
             </td>
-            {/* 3. 合約金額數值格 */}
-            <td className="p-1 border-r border-slate-900 font-mono text-right text-xs font-semibold">
+            {/* H17: 合約金額數值 */}
+            <td className="border-r border-black p-0.5 text-right align-middle font-mono font-bold pr-2">
               {contractAmt ? formatCurrency(contractAmt) : ''}
             </td>
-            {/* 4. 餘額或超支（直書文字） */}
-            <td rowSpan={2} className="bg-slate-50 p-0.5 border-r border-slate-900 font-bold text-center align-middle leading-tight text-[11px] w-6">
+            {/* I17:I18 餘額或超支 (跨2列) */}
+            <td rowSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
               餘<br/>額<br/>或<br/>超<br/>支
             </td>
-            {/* 5. 餘額數值格 */}
-            <td rowSpan={2} className="p-1 border-r border-slate-900 font-mono text-right font-bold text-xs align-middle">
+            {/* J17:L18 餘額數值 (跨2列, 跨3欄) */}
+            <td colSpan={3} rowSpan={2} className="border-r border-black p-0.5 text-right align-middle font-mono font-bold pr-2">
               {contractAmt ? formatCurrency(balanceAmt) : ''}
             </td>
-            {/* 6. 預算查認者（直書文字） */}
-            <td rowSpan={2} className="bg-slate-50 p-0.5 border-r border-slate-900 font-bold text-center align-middle leading-tight text-[11px] w-6">
+            {/* M17:M18 預算查認者 (跨2列) */}
+            <td rowSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
               預<br/>算<br/>查<br/>認<br/>者
             </td>
-            {/* 7. 預算查認者簽名空白格 */}
-            <td rowSpan={2} className="p-1 border-r border-slate-900"></td>
-            {/* 8. 會同驗收者（直書文字） */}
-            <td rowSpan={2} className="bg-slate-50 p-0.5 border-r border-slate-900 font-bold text-center align-middle leading-tight text-[11px] w-6">
+            {/* N17:S18 預算查認空白簽名欄 (跨2列, 跨6欄) */}
+            <td colSpan={6} rowSpan={2} className="border-r border-black p-0.5 align-middle"></td>
+            {/* T17:T18 會同驗收者 (跨2列) */}
+            <td rowSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
               會<br/>同<br/>驗<br/>收<br/>者
             </td>
+            {/* U17:X18 主管 (跨2列, 跨4欄) */}
+            <td colSpan={4} rowSpan={2} className="border-r border-black p-0.5 text-center align-top">
+              <div className="font-bold text-[11px] pt-0.5">主　管</div>
+            </td>
+            {/* Y17:AD18 經辦 (跨2列, 跨6欄) */}
+            <td colSpan={6} rowSpan={2} className="p-0.5 text-center align-top">
+              <div className="font-bold text-[11px] pt-0.5">經　辦</div>
+            </td>
           </tr>
-          <tr className="border-b-2 border-slate-900">
-            {/* 2. 累計實支金額 標題 */}
-            <td colSpan={2} className="bg-slate-50 p-1 border-r border-slate-900 font-bold text-center text-[10px] leading-tight">
+
+          {/* Row 18: 累計實支金額 */}
+          <tr className="border-b border-black h-6">
+            <td className="border-r border-black p-0.5 text-center font-bold align-middle text-[10px] leading-tight">
               累計實支<br/>金額
             </td>
-            {/* 3. 累計實支金額數值格 */}
-            <td className="p-1 border-r border-slate-900 font-mono text-right text-xs font-semibold">
+            <td className="border-r border-black p-0.5 text-right align-middle font-mono font-bold pr-2">
               {payable ? formatCurrency(payable) : ''}
             </td>
           </tr>
 
-          {/* 列 20~21：單據粘貼處與特殊要求 */}
-          <tr className="border-b border-slate-900">
-            <td rowSpan={2} className="bg-slate-100 font-bold p-0.5 text-center border-r border-slate-900 align-middle leading-tight text-[11px] w-6">
+          {/* Row 19: 空白間隔列 (整列合併) */}
+          <tr className="border-b border-black h-2 bg-white">
+            <td colSpan={26} className="p-0"></td>
+          </tr>
+
+          {/* Row 20: 單據粘貼處 rs=18、特殊要求 rs=2、第1列核選項目、財務部簽認 rs=6 */}
+          <tr className="border-b border-black h-6 text-[10px]">
+            {/* E20:E37 單據粘貼處 (跨18列) */}
+            <td rowSpan={18} className="border-r border-black p-0.5 text-center font-bold align-middle leading-relaxed tracking-widest">
               單<br/>據<br/>粘<br/>貼<br/>處
             </td>
-            <td colSpan={2} rowSpan={2} className="bg-slate-100 font-bold p-1 text-center border-r border-slate-900 align-middle">
-              特殊要求
+            {/* F20:F21 特殊要求 (跨2列) */}
+            <td rowSpan={2} className="border-r border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
+              特<br/>殊<br/>要<br/>求
             </td>
-            <td colSpan={5} className="p-1.5 border-r border-slate-900">
-              <div className="flex flex-wrap items-center gap-4 text-[11px]">
-                <span>{sr.noCross ? '☑' : '☐'} 請勿劃線</span>
-                <span>{sr.cashiersCheck ? '☑' : '☐'} 請開立銀行本票/台銀支票</span>
-                <span>{sr.wireTransfer ? '☑' : '☐'} 請以匯款支付</span>
-                <span>{sr.offsetBorrowing ? '☑' : '☐'} 請沖銷借支款</span>
-              </div>
+            {/* G20: 方塊 */}
+            <td className="p-0.5 text-center align-middle font-bold text-xs">{sr.noCross ? '☑' : '☐'}</td>
+            {/* H20: 請勿劃線 */}
+            <td className="p-0.5 align-middle whitespace-nowrap">請勿劃線</td>
+            {/* I20: 方塊 */}
+            <td className="p-0.5 text-center align-middle font-bold text-xs">{sr.cashiersCheck ? '☑' : '☐'}</td>
+            {/* J20:M20 請開立銀行本票/台銀支票 */}
+            <td colSpan={4} className="p-0.5 align-middle whitespace-nowrap">請開立銀行本票/台銀支票</td>
+            {/* N20: 方塊 */}
+            <td className="p-0.5 text-center align-middle font-bold text-xs">{sr.wireTransfer ? '☑' : '☐'}</td>
+            {/* O20:S20 請以匯款支付 */}
+            <td colSpan={5} className="p-0.5 align-middle whitespace-nowrap">請以匯款支付</td>
+            {/* T20: 方塊 */}
+            <td className="p-0.5 text-center align-middle font-bold text-xs">{sr.offsetBorrowing ? '☑' : '☐'}</td>
+            {/* U20:X20 請沖銷借支款 */}
+            <td colSpan={4} className="border-r border-black p-0.5 align-middle whitespace-nowrap">請沖銷借支款</td>
+            {/* Y20:Y25 財務部簽認 (跨6列) */}
+            <td rowSpan={6} className="border-r border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
+              財<br/>務<br/>部<br/>簽<br/>認
             </td>
-            <td rowSpan={2} className="p-1 text-center align-middle border-slate-900">
-              <div className="font-bold text-slate-700">財務部簽認</div>
-            </td>
+            {/* Z20:AD25 財務簽章空白欄 (跨6列) */}
+            <td colSpan={5} rowSpan={6} className="p-0.5 align-middle"></td>
           </tr>
-          <tr className="border-b-2 border-slate-900">
-            <td colSpan={5} className="p-1.5 border-r border-slate-900 text-[11px]">
-              <div className="flex flex-wrap items-center gap-4">
-                <span>{sr.noEndorse ? '☑' : '☐'} 請勿禁止背書轉讓</span>
-                <span>
-                  {sr.postDatedCheck ? '☑' : '☐'}{' '}
-                  {(() => {
-                    if (!sr.postDatedCheck) {
-                      return '請付遠期支票予受款者';
-                    }
-                    if (sr.chequeTimingMode === 'immediate') {
-                      return '請付遠期支票予受款者－即期';
-                    }
-                    if (sr.chequeTimingMode === 'days' && sr.chequeDays) {
-                      return `請付遠期支票予受款者－${sr.chequeDays} 天`;
-                    }
-                    if (sr.chequeTimingMode === 'date' && sr.postDatedDate) {
-                      return `請付遠期支票予受款者－指定兌現日期 ${sr.postDatedDate.replace(/-/g, '/')}`;
-                    }
-                    if (postDatedParts) {
-                      return (
-                        <>
-                          請付遠期支票予受款者，並於{' '}
-                          <span className="font-mono underline font-bold px-1">{postDatedParts.rocYear}</span>年{' '}
-                          <span className="font-mono underline font-bold px-1">{postDatedParts.month}</span>月{' '}
-                          <span className="font-mono underline font-bold px-1">{postDatedParts.day}</span>日付予支票。
-                        </>
-                      );
-                    }
-                    return '請付遠期支票予受款者';
-                  })()}
-                </span>
-              </div>
+
+          {/* Row 21: 特殊要求第2列 */}
+          <tr className="border-b border-black h-6 text-[10px]">
+            {/* G21: 方塊 */}
+            <td className="p-0.5 text-center align-middle font-bold text-xs">{sr.noEndorse ? '☑' : '☐'}</td>
+            {/* H21: 請勿禁止背書轉讓 */}
+            <td className="p-0.5 align-middle whitespace-nowrap">請勿禁止背書轉讓</td>
+            {/* I21: 方塊 */}
+            <td className="p-0.5 text-center align-middle font-bold text-xs">{sr.postDatedCheck ? '☑' : '☐'}</td>
+            {/* J21:M21 請付遠期支票予受款者，並於 */}
+            <td colSpan={4} className="p-0.5 align-middle whitespace-nowrap">請付遠期支票予受款者，並於</td>
+            {/* N21: 年 */}
+            <td className="p-0.5 text-center align-middle font-mono">{postDatedParts?.rocYear || '　'}</td>
+            <td className="p-0.5 align-middle">年</td>
+            {/* P21: 月 */}
+            <td className="p-0.5 text-center align-middle font-mono">{postDatedParts?.month || '　'}</td>
+            <td className="p-0.5 align-middle">月</td>
+            {/* R21: 日 */}
+            <td className="p-0.5 text-center align-middle font-mono">{postDatedParts?.day || '　'}</td>
+            <td className="p-0.5 align-middle">日</td>
+            {/* T21:X21 付予支票。 */}
+            <td colSpan={5} className="border-r border-black p-0.5 align-middle whitespace-nowrap">付予支票。</td>
+          </tr>
+
+          {/* Row 22 到 Row 37: 請款說明 (跨16列) 與 橫線、總經理、董事長 */}
+          {/* Row 22: 請款說明第1行 */}
+          <tr className="border-b border-slate-300 h-6">
+            {/* F22:F37 請款說明 (跨16列) */}
+            <td rowSpan={16} className="border-r border-black p-0.5 text-center font-bold align-middle leading-relaxed tracking-widest">
+              請<br/>款<br/>說<br/>明
+            </td>
+            <td colSpan={18} className="border-r border-black px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
+              {displayLines[0]}
             </td>
           </tr>
 
-          {/* 列 22~37：請款說明與總經理、董事長簽核 */}
-          <tr>
-            <td colSpan={3} className="bg-slate-100 font-bold p-2 text-center border-r border-slate-900 align-middle">
-              請款說明
+          {/* Row 23-25: 說明行2-4 */}
+          {[1, 2, 3].map(idx => (
+            <tr key={idx} className="border-b border-slate-300 h-6">
+              <td colSpan={18} className="border-r border-black px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
+                {displayLines[idx]}
+              </td>
+            </tr>
+          ))}
+
+          {/* Row 26: 說明行5 + 總經理 (跨6列) */}
+          <tr className="border-b border-slate-300 h-6">
+            <td colSpan={18} className="border-r border-black px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
+              {displayLines[4]}
             </td>
-            <td colSpan={5} className="p-0 border-r border-slate-900 align-top">
-              <div className="divide-y divide-slate-200 min-h-[220px]">
-                {displayLines.map((line, idx) => (
-                  <div key={idx} className="px-2 py-1 min-h-[20px] text-slate-800 whitespace-pre-wrap break-words">
-                    {line}
-                  </div>
-                ))}
-              </div>
+            {/* Y26:Y31 總經理 (跨6列) */}
+            <td rowSpan={6} className="border-r border-black border-t border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
+              總<br/><br/>經<br/><br/>理
             </td>
-            <td className="p-0 align-top">
-              <div className="flex flex-col h-full divide-y border-slate-900 text-center">
-                <div className="p-1 bg-slate-50 font-bold text-xs border-b border-slate-900">總　經　理</div>
-                <div className="h-24 border-b border-slate-900"></div>
-                <div className="p-1 bg-slate-50 font-bold text-xs border-b border-slate-900">董　事　長</div>
-                <div className="h-24"></div>
-              </div>
-            </td>
+            {/* Z26:AD31 總經理空白簽名 (跨6列) */}
+            <td colSpan={5} rowSpan={6} className="border-t border-black p-0.5 align-middle"></td>
           </tr>
+
+          {/* Row 27-31: 說明行6-10 */}
+          {[5, 6, 7, 8, 9].map(idx => (
+            <tr key={idx} className="border-b border-slate-300 h-6">
+              <td colSpan={18} className="border-r border-black px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
+                {displayLines[idx]}
+              </td>
+            </tr>
+          ))}
+
+          {/* Row 32: 說明行11 + 董事長 (跨6列) */}
+          <tr className="border-b border-slate-300 h-6">
+            <td colSpan={18} className="border-r border-black px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
+              {displayLines[10]}
+            </td>
+            {/* Y32:Y37 董事長 (跨6列) */}
+            <td rowSpan={6} className="border-r border-black border-t border-black p-0.5 text-center font-bold align-middle leading-tight tracking-widest">
+              董<br/><br/>事<br/><br/>長
+            </td>
+            {/* Z32:AD37 董事長空白簽名 (跨6列) */}
+            <td colSpan={5} rowSpan={6} className="border-t border-black p-0.5 align-middle"></td>
+          </tr>
+
+          {/* Row 33-37: 說明行12-16 */}
+          {[11, 12, 13, 14, 15].map((idx, i) => (
+            <tr key={idx} className={i === 4 ? "border-b border-black h-6" : "border-b border-slate-300 h-6"}>
+              <td colSpan={18} className="border-r border-black px-2 py-0.5 align-middle text-[11px] whitespace-pre-wrap break-words">
+                {displayLines[idx]}
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
 
-      {/* 表單編號腳註 */}
-      <div className="flex justify-end mt-2 text-[10px] text-slate-500 font-mono">
+      {/* 表單編號腳註 (Row 38) */}
+      <div className="flex justify-end mt-1 text-[10px] font-mono">
         FM0302-1
       </div>
     </div>
