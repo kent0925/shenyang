@@ -72,7 +72,17 @@ function formatAmount(amount?: number): string {
  */
 function formatDateTime(dtStr?: string): string {
   if (!dtStr) return '—';
-  return dtStr.replace('T', ' ').slice(0, 19);
+  const d = new Date(dtStr);
+  if (isNaN(d.getTime())) {
+    return String(dtStr).replace('T', ' ').slice(0, 19);
+  }
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const seconds = String(d.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
 export const FormRecordsPanel: React.FC<Props> = ({
