@@ -122,6 +122,17 @@ export const PaymentRequestForm: React.FC<Props> = ({
       .then(([items, forms]) => {
         setBudgetItems(items);
         setProjectForms(forms);
+        // 若表單已連結預算項目但合約總額為空，自動帶入該預算額度數值
+        if (data.budgetItemId && !data.contractTotal) {
+          const matched = items.find((b) => b.budgetItemId === data.budgetItemId);
+          if (matched && matched.budgetAmount !== undefined && matched.budgetAmount !== null) {
+            onChange({
+              ...data,
+              contractTotal: formatCurrency(matched.budgetAmount),
+              ...(!data.expenseNature && matched.itemName ? { expenseNature: matched.itemName } : {}),
+            });
+          }
+        }
       })
       .finally(() => {
         setIsLoadingBudget(false);
@@ -1224,6 +1235,16 @@ export const PaymentRequestForm: React.FC<Props> = ({
                         budgetItemId: bId,
                         budgetItemName: matched ? matched.itemName : '',
                       };
+                      if (matched) {
+                        // 自動帶入預算項目的原預算金額至合約/訂購單總額（數值帶入）
+                        if (matched.budgetAmount !== undefined && matched.budgetAmount !== null) {
+                          updates.contractTotal = formatCurrency(matched.budgetAmount);
+                        }
+                        // 若尚未填寫費用性質，自動帶入預算項目名稱
+                        if (!data.expenseNature && matched.itemName) {
+                          updates.expenseNature = matched.itemName;
+                        }
+                      }
                       // 預算項目指定的廠商是 authoritative relation，選取時一律同步。
                       if (matched && matched.vendorId) {
                         const matchedVend = vendors.find((v) => v.vendorId === matched.vendorId);
