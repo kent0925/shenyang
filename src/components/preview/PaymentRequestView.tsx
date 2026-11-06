@@ -345,7 +345,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
           </tr>
 
           {/* Row 20: 單據粘貼處 rs=18、特殊要求 rs=2、第1列核選項目、財務部簽認 rs=6、財務簽章 rs=6 */}
-          <tr className="h-[25px] text-[10px]">
+          <tr className="h-[25px] text-[11px]">
             {/* E20:E37 單據粘貼處 (跨18列，一路到底垂直均勻分布) */}
             <td rowSpan={18} className="border-r border-b border-black p-0.5 text-center font-bold align-middle">
               <div className="flex flex-col justify-around h-full py-8 text-[11px] leading-relaxed">
@@ -356,9 +356,9 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
                 <span>處</span>
               </div>
             </td>
-            {/* F20:F21 特殊要求 (跨2列) 字級設為7.5px，內距留白充裕，絕不卡線 */}
+            {/* F20:F21 特殊要求 (跨2列) 字級設為9.5px，內距留白充裕，絕不卡線 */}
             <td rowSpan={2} className="border-r border-b border-black p-0 text-center font-bold align-middle">
-              <div className="flex flex-col justify-center items-center h-full text-[7.5px] leading-tight py-1">
+              <div className="flex flex-col justify-center items-center h-full text-[9.5px] leading-tight py-1">
                 <span>特</span>
                 <span className="mt-0.5">殊</span>
                 <span className="mt-0.5">要</span>
@@ -396,7 +396,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
           </tr>
 
           {/* Row 21: 特殊要求第2列 */}
-          <tr className="h-[25px] text-[10px]">
+          <tr className="h-[25px] text-[11px]">
             {/* G21: 方塊 */}
             <td className="border-b border-black p-0.5 text-center align-middle font-bold text-xs">{sr.noEndorse ? '☑' : '☐'}</td>
             {/* H21: 請勿禁止背書轉讓 */}
