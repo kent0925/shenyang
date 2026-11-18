@@ -10,29 +10,32 @@ export interface VendorLookupResult {
 
 /**
  * 驗證統一編號邏輯
- * 支援舊制（除以 10 餘 0）與新制（2023 起倒數第 2 位為 7 時乘 4 加總餘 9 亦屬合法）
+ * 依據財政部規範：
+ * 1. 舊制（112年4月前）：加權加總須能被 10 整除
+ * 2. 新制（112年4月起）：加權加總改為須能被 5 整除（向下完全相容舊制）
+ * 3. 第 7 位為 7 時，乘積為 28，十位與個位和為 10，計入加總可為 0（或 10）或 1，任一滿足能被 5 整除即屬合法
  */
 export function validateTaxId(taxId: string): boolean {
   const clean = (taxId || '').trim();
   if (!/^\d{8}$/.test(clean)) return false;
 
   const weights = [1, 2, 1, 2, 1, 2, 4, 1];
-  let sumOld = 0;
-  let sumNew = 0;
+  let sum1 = 0;
+  let sum2 = 0;
 
   for (let i = 0; i < 8; i++) {
     const digit = parseInt(clean[i], 10);
     const prod = digit * weights[i];
     const s = Math.floor(prod / 10) + (prod % 10);
-    sumOld += s;
+    sum1 += s;
     if (i === 6 && digit === 7) {
-      sumNew += 1;
+      sum2 += 1;
     } else {
-      sumNew += s;
+      sum2 += s;
     }
   }
 
-  return sumOld % 10 === 0 || (clean[6] === '7' && sumNew % 10 === 0);
+  return sum1 % 5 === 0 || (clean[6] === '7' && sum2 % 5 === 0);
 }
 
 export type CompanyLookupResult = VendorLookupResult;
