@@ -48,9 +48,9 @@ export async function generatePdfFromElement(element: HTMLElement, filename: str
     renderWidth = renderHeight * ratio;
   }
 
-  // 水平置中
+  // 水平與垂直置中，確保 A4 頁面上下留白完美對稱
   const posX = marginX + (maxWidth - renderWidth) / 2;
-  const posY = marginY;
+  const posY = marginY + (maxHeight - renderHeight) / 2;
 
   pdf.addImage(imgData, 'JPEG', posX, posY, renderWidth, renderHeight, undefined, 'FAST');
   const pdfBlob = pdf.output('blob');
