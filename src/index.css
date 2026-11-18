@@ -10,7 +10,7 @@ body {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 4mm 4mm;
+    margin: 5mm; /* 標準 5mm 物理安全邊界 */
   }
 
   html, body {
@@ -62,15 +62,23 @@ body {
     overflow: visible !important;
   }
 
-  /* 表單主體外框陰影去除，置中貼合 A4 版面 */
+  /* 表單主體自動等比自適應 A4 可印寬度，保證四邊外框 100% 完整收邊，絕不被裁切 */
   #modal-seal-view,
   #modal-payment-view {
     border: none !important;
     box-shadow: none !important;
     margin: 0 auto !important;
-    padding-left: 0 !important;
-    padding-right: 0 !important;
+    padding: 0 !important;
     width: 100% !important;
-    max-width: 794px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  #modal-seal-view table,
+  #modal-payment-view table {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    table-layout: fixed !important;
   }
 }

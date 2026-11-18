@@ -92,7 +92,7 @@ export const PreviewModal: React.FC<Props> = ({
         {/* 底部 (列印時隱藏) */}
         <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500 no-print">
           <span className="text-slate-600">
-            提示：若要取得<strong>100% 向量真實文字</strong>且與預覽完全相同的品質，請點擊上方藍色<strong>「另存為 PDF / 列印」</strong>按鈕，在目的地選擇「另存為 PDF」即可。
+            提示：若要取得<strong>100% 向量真實文字</strong>，請點擊上方藍色<strong>「另存為 PDF / 列印」</strong>按鈕（目的地選擇「另存為 PDF」）。已自動最佳化 A4 寬度，四邊框線完整收邊不被裁切。
           </span>
           <button
             type="button"

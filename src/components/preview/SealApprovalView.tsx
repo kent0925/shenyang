@@ -28,7 +28,7 @@ export const SealApprovalView: React.FC<Props> = ({ data, id = 'seal-approval-vi
   return (
     <div
       id={id}
-      className="bg-white text-slate-900 p-4 sm:p-6 max-w-[760px] mx-auto text-xs leading-normal border border-slate-300 shadow-sm print:border-none print:shadow-none print:p-0 font-sans"
+      className="bg-white text-slate-900 p-4 sm:p-6 max-w-[760px] mx-auto text-xs leading-normal border border-slate-300 shadow-sm print:border-none print:shadow-none print:p-0 print:w-full print:max-w-full font-sans"
       style={{ boxSizing: 'border-box' }}
     >
       {/* 頁首公司抬頭 */}

@@ -38,7 +38,7 @@ export const PaymentRequestView: React.FC<Props> = ({ data, id = 'payment-reques
   return (
     <div
       id={id}
-      className="bg-white text-black px-7 py-3.5 mx-auto text-[11px] leading-normal border border-slate-300 shadow-sm print:border-none print:shadow-none"
+      className="bg-white text-black px-7 py-3.5 mx-auto text-[11px] leading-normal border border-slate-300 shadow-sm print:border-none print:shadow-none print:w-full print:max-w-full print:p-0"
       style={{
         width: '794px',
         boxSizing: 'border-box',
